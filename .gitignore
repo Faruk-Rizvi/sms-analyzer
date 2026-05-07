@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+*.xlsx
+*.xls
+!samples/*.csv
+*.html
+*.docx
+/tmp/
+.DS_Store
