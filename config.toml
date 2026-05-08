@@ -1,0 +1,19 @@
+[server]
+# অ্যাপ দ্রুত রেসপন্ড করার জন্য
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# বাংলাদেশে দ্রুত লোডের জন্য
+gatherUsageStats = false
+
+[runner]
+# ফাইল আপলোডের সময় স্বয়ংক্রিয় রিরান বন্ধ
+fastReruns = true
+
+[theme]
+primaryColor = "#c0392b"
+backgroundColor = "#f4f5f7"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1a1a2e"
