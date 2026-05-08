@@ -48,17 +48,40 @@ OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comebac
 
 SKIP_BODY_RE = re.compile(
     r"whatsapp\.com|Let's chat on WhatsApp|Let's video call|imo\.onelink|imo-তে"
-    r"|কলটি গ্রহণ করতে পারবেন|Let's have a call|meet\.google\.com"
-    r"|Can't talk now|I'll be there soon|This invite expires",
+    r"|কলটি গ্রহণ|এখন কল করুন|কল করুন|call করুন"
+    r"|Let's have a call|meet\.google\.com"
+    r"|Can't talk now|I'll be there soon|This invite expires"
+    r"|প্রিয় গ্রাহক.*কল|প্রিয় গ্রাহক.*offer|প্রিয় গ্রাহক.*অফার"
+    r"|আপনার নম্বরে.*কল|আপনাকে কল|missed call notification"
+    r"|voice call|video call|incoming call|outgoing call",
     re.I)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস', re.I)
+
+# অপারেটর বা bulk SMS body filter
+OPERATOR_BODY_RE = re.compile(
+    r'প্রিয় গ্রাহক|dear customer|dear subscriber'
+    r'|mb pack|internet pack|data pack|minute pack|combo pack'
+    r'|recharge.*tk|tk.*recharge|balance.*expire|validity.*day'
+    r'|\*4\*\d+\*|dial \*|\*\d+#|press \*'
+    r'|জিবি\+\d+মিনিট|\d+জিবি\+|মিনিট.*ডায়াল|ডায়াল.*মিনিট'
+    r'|ডায়েলে|রিচার্জ.*ডায়াল|ডায়াল.*রিচার্জ'
+    r'|bonus.*mb|mb.*bonus|free.*sms|sms.*free'
+    r'|আপনার প্যাক|আপনার অফার|special offer.*tk|tk.*special offer'
+    r'|এয়ারটেল|airtel offer|robi offer|gp offer|bl offer'
+    r'|\d+দিন/\*|\d+মিনিট.*\*\d|\*\d+\*\d+\*\d+#',
+    re.I
+)
 
 def is_filtered(sender, body):
     s  = str(sender).strip()
     st = stype(s)
     if st in ("mfs","bank","service","personal"):
-        return bool(SKIP_BODY_RE.search(body)) or bool(MISSED_RE.search(body))
+        if SKIP_BODY_RE.search(body): return True
+        if MISSED_RE.search(body): return True
+        # Personal BD নম্বর থেকে operator-style bulk SMS ফিল্টার
+        if st == "personal" and OPERATOR_BODY_RE.search(body): return True
+        return False
     if SC_RE.match(s): return True
     sl = s.lower()
     return any(f in sl for f in OP_KW)
@@ -71,27 +94,28 @@ def to_dt(d):
 
 def merge(sms_list):
     """শুধু ব্যক্তিগত BD নম্বরের ভাঙা SMS জোড়া লাগায়।
-    Bank / MFS / Service SMS কখনো merge হবে না।"""
+    Bank / MFS / Service SMS কখনো merge হবে না।
+    একই direction (SMSMT/SMSMO) না হলে merge হবে না।"""
     items = sorted(sms_list, key=lambda x: to_dt(x["date"]))
     out, i = [], 0
     while i < len(items):
         cur  = dict(items[i])
         st   = stype(cur["sender"])
-        # Bank/MFS/Service/Other — merge নয়, সরাসরি রাখো
         if st != "personal":
             cur["parts"] = 1
             out.append(cur)
             i += 1
             continue
-        # Personal BD নম্বর — ২ মিনিটের মধ্যে একই sender হলে জোড়া
         dt0  = to_dt(cur["date"])
         sl0  = cur["sender"].strip().lower()
+        dir0 = cur.get("direction","")
         body = cur["body"]
         j = i + 1
         while j < len(items):
             nx = items[j]
             if (stype(nx["sender"]) == "personal" and
                     nx["sender"].strip().lower() == sl0 and
+                    nx.get("direction","") == dir0 and
                     abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 120):
                 body += "\n" + nx["body"]
                 j += 1
@@ -459,8 +483,6 @@ def generate_html(sms_list, stats, out_path, tn=""):
                  if s["amount"]>=TIER_SMALL else "")
         tier_badge=(f'<span class="rbadge" style="background:{bdr}">{TIER_EN_LBL.get(t,"")}</span>' if t else "")
         dir_badge=""
-        if direction=="SMSMT": dir_badge='<span class="dir-in">● IN</span>'
-        elif direction=="SMSMO": dir_badge='<span class="dir-out">● OUT</span>'
         acct_mini=""
         if ai and ai.get("service"):
             pts=[]
@@ -519,8 +541,6 @@ def generate_html(sms_list, stats, out_path, tn=""):
     fbtns+=fb(f'🔴 High ({tier_cnt.get("high",0)})',"fTier(this,'high')","#991b1b")
     fbtns+=fb(f'🟠 Medium ({tier_cnt.get("med",0)})',"fTier(this,'med')","#dc2626")
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
-    if smsmt_count: fbtns+=fb(f'● Incoming / SMSMT ({smsmt_count})',"fDir(this,'SMSMT')","#16a34a")
-    if smsmo_count: fbtns+=fb(f'● Outgoing / SMSMO ({smsmo_count})',"fDir(this,'SMSMO')","#0369a1")
     for ck in ["identity","love_family","travel","courier","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
