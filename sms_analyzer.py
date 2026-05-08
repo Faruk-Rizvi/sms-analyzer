@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SMS Forensic Analyzer v10 — Bangladesh Law Enforcement
+SMS Forensic Analyzer v10 — NSI REQUIREMENT
 তিন স্তরের লেনদেন + ব্যক্তিগত/সেবা SMS
 """
 import openpyxl, re, html as hl, sys, os, csv
