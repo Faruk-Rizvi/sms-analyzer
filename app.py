@@ -1,18 +1,18 @@
 import streamlit as st
 import tempfile, os, re, base64
 from sms_analyzer import process_file
- 
+
 st.set_page_config(
     page_title="SMS Intelligence Dashboard",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
- 
+
 st.markdown("""
 <style>
 /* ── Google Fonts সরানো হয়েছে — system fonts ব্যবহার করা হচ্ছে (বাংলাদেশে দ্রুত লোড) ── */
- 
+
 *,*::before,*::after{box-sizing:border-box}
 html,body,.stApp{
   background:#f4f5f7!important;
@@ -22,7 +22,7 @@ html,body,.stApp{
 .stApp>header{display:none}
 section[data-testid="stSidebar"]{display:none}
 footer{display:none}
- 
+
 /* ── TOPBAR ── */
 .topbar{background:#fff;border-bottom:1px solid #e8eaed;padding:0 48px;height:64px;
   display:flex;align-items:center;justify-content:space-between;
@@ -36,7 +36,7 @@ footer{display:none}
 .tb-nav{display:flex;gap:28px}
 .tb-nav a{font-size:13px;font-weight:500;color:#525866;text-decoration:none}
 .tb-nav a:hover{color:#c0392b}
- 
+
 /* ── HERO ── */
 .hero{background:linear-gradient(135deg,#1a0505 0%,#7b0d0d 42%,#c0392b 70%,#a93226 100%);
   padding:52px 48px 44px;position:relative;overflow:hidden}
@@ -55,7 +55,7 @@ footer{display:none}
 .hf{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.85);font-size:13px;font-weight:500}
 .hf-icon{width:30px;height:30px;background:rgba(255,255,255,.15);border-radius:7px;
   display:flex;align-items:center;justify-content:center;font-size:14px}
- 
+
 /* ── PANELS ── */
 .main-wrap{padding:36px 48px}
 .panel{background:#fff;border:1px solid #e8eaed;border-radius:14px;
@@ -68,7 +68,7 @@ footer{display:none}
 .ph-icon.blue{background:linear-gradient(135deg,#2563eb,#1d4ed8)}
 .ph-title{font-size:17px;font-weight:700;color:#1a1a2e;letter-spacing:-.3px}
 .ph-sub{font-size:12px;color:#9ca3af;margin-top:2px}
- 
+
 /* ── DETECT PANEL ── */
 .detect-panel{background:#fff;border:1px solid #e8eaed;border-radius:14px;padding:22px}
 .detect-title{font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px}
@@ -77,10 +77,10 @@ footer{display:none}
 .d-item:last-child{border-bottom:none}
 .d-left{display:flex;align-items:center;gap:10px}
 .d-dot{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
- 
+
 /* ── UPLOAD META ── */
 .upload-meta{display:flex;justify-content:space-between;font-size:11px;color:#9ca3af;padding:6px 2px 0}
- 
+
 /* ── ENGINE BADGE ── */
 .eng{background:linear-gradient(135deg,#fef9f0,#fef3c7);border:1px solid #fcd34d;
   border-radius:12px;padding:14px 18px;display:flex;align-items:center;
@@ -89,7 +89,7 @@ footer{display:none}
 .eng-sub{font-size:12px;color:#92400e}
 .secure-badge{margin-left:auto;text-align:center;flex-shrink:0;
   background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 14px}
- 
+
 /* ── PREVIEW CARDS ── */
 .prev-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .prev-card{border-radius:12px;padding:16px;border:1px solid transparent}
@@ -103,12 +103,12 @@ footer{display:none}
 .pc-desc{font-size:11px;color:#9ca3af;margin-top:3px}
 .r .pc-val{color:#b91c1c}.o .pc-val{color:#c2410c}
 .a .pc-val{color:#b45309}.b .pc-val{color:#1d4ed8}
- 
+
 /* ── CAPABILITIES ── */
 .cap-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .cap-item{display:flex;align-items:center;gap:10px;padding:9px 12px;
   background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:500;color:#374151}
- 
+
 /* ── RESULT BANNER ── */
 .result-banner{background:linear-gradient(135deg,#064e3b,#065f46);border-radius:14px;
   padding:22px 28px;display:flex;align-items:center;justify-content:space-between;
@@ -120,7 +120,7 @@ footer{display:none}
 .rs-num{font-size:24px;font-weight:800;font-family:'Courier New',monospace;color:#fff;line-height:1}
 .rs-lbl{font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
 .rs.r .rs-num{color:#fca5a5}.rs.o .rs-num{color:#fdba74}.rs.a .rs-num{color:#fde047}
- 
+
 /* ── BOTTOM META ── */
 .bm{display:grid;grid-template-columns:repeat(4,1fr);
   background:#fff;border:1px solid #e8eaed;border-radius:14px;margin-top:28px;overflow:hidden}
@@ -128,7 +128,7 @@ footer{display:none}
 .bm-item:last-child{border-right:none}
 .bm-title{font-size:13px;font-weight:700;color:#374151;margin-bottom:3px;display:flex;align-items:center;gap:6px}
 .bm-sub{font-size:11px;color:#9ca3af}
- 
+
 /* ── STREAMLIT OVERRIDES ── */
 [data-testid="stFileUploaderDropzone"]{
   border:2.5px dashed #d1d5db!important;border-radius:12px!important;
@@ -157,7 +157,7 @@ footer{display:none}
 label[data-baseweb="form-control-label"]{display:none!important}
 </style>
 """, unsafe_allow_html=True)
- 
+
 # ── TOPBAR ──────────────────────────────────────────────────
 st.markdown("""
 <div class="topbar">
@@ -175,7 +175,7 @@ st.markdown("""
   </div>
 </div>
 """, unsafe_allow_html=True)
- 
+
 # ── HERO ────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero">
@@ -192,12 +192,12 @@ st.markdown("""
   </div>
 </div>
 """, unsafe_allow_html=True)
- 
+
 # ── MAIN CONTENT ─────────────────────────────────────────────
 st.markdown('<div class="main-wrap">', unsafe_allow_html=True)
- 
+
 col_left, col_right = st.columns([2, 1], gap="large")
- 
+
 with col_left:
     st.markdown("""
     <div class="panel">
@@ -209,7 +209,7 @@ with col_left:
         </div>
       </div>
     </div>""", unsafe_allow_html=True)
- 
+
     uploaded = st.file_uploader(
         "SMS File", type=["xlsx","xls","csv"],
         help="Supported: .xlsx, .xls, .csv — Max 200MB",
@@ -220,7 +220,7 @@ with col_left:
       <span>✅ Supported: .XLSX / .XLS / .CSV</span>
       <span>ℹ️ Max file size: 200MB</span>
     </div>""", unsafe_allow_html=True)
- 
+
     st.markdown("""
     <div style="height:18px"></div>
     <div class="panel">
@@ -232,7 +232,7 @@ with col_left:
         </div>
       </div>
     </div>""", unsafe_allow_html=True)
- 
+
     target_num = st.text_input(
         "Target Number",
         placeholder="e.g. 8801711XXXXXXX or 01711XXXXXXX",
@@ -244,7 +244,7 @@ with col_left:
       ℹ️ Leave blank to analyze all numbers in the uploaded file.
       When specified, the report will focus on SMS associated with this number.
     </div>""", unsafe_allow_html=True)
- 
+
     st.markdown("""
     <div class="eng">
       <div style="font-size:22px">🔬</div>
@@ -260,9 +260,9 @@ with col_left:
           100% SECURE<br>LOCAL PROCESSING</div>
       </div>
     </div>""", unsafe_allow_html=True)
- 
+
     analyze_btn = st.button("🔍  Run Forensic Analysis", use_container_width=True)
- 
+
 with col_right:
     st.markdown("""
     <div class="detect-panel">
@@ -275,11 +275,11 @@ with col_right:
       <div class="d-item"><div class="d-left"><div class="d-dot" style="background:#f0fdf4">🛒</div>Shopping, Billing &amp; Courier</div>›</div>
       <div class="d-item"><div class="d-left"><div class="d-dot" style="background:#fff7ed">🔗</div>Multi-part (Concatenated) SMS</div>›</div>
     </div>""", unsafe_allow_html=True)
- 
+
 # ── PREVIEW + CAPABILITIES ───────────────────────────────────
 st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
 col_p, col_c = st.columns([3, 2], gap="large")
- 
+
 with col_p:
     st.markdown("""
     <div style="font-size:17px;font-weight:700;color:#1a1a2e;margin-bottom:4px">Report Preview</div>
@@ -303,7 +303,7 @@ with col_p:
       <span>📅 Monthly Grouping</span><span>🔍 Advanced Filtering</span>
       <span>🔎 Keyword Search</span><span>📊 Bank/MFS Summary</span>
     </div>""", unsafe_allow_html=True)
- 
+
 with col_c:
     st.markdown("""
     <div style="font-size:17px;font-weight:700;color:#1a1a2e;margin-bottom:14px">Key Capabilities</div>
@@ -317,7 +317,7 @@ with col_c:
       <div class="cap-item"><span>📅</span>Monthly Wise Organization</div>
       <div class="cap-item"><span>⬇️</span>In-report HTML Download Button</div>
     </div>""", unsafe_allow_html=True)
- 
+
 # ── BOTTOM META ──────────────────────────────────────────────
 st.markdown("""
 <div class="bm">
@@ -331,9 +331,9 @@ st.markdown("""
     <div class="bm-sub" style="font-weight:600;color:#374151">Md. Omar Faruk Mazumder</div></div>
 </div>
 """, unsafe_allow_html=True)
- 
+
 st.markdown('</div>', unsafe_allow_html=True)
- 
+
 # ── ANALYSIS ─────────────────────────────────────────────────
 if analyze_btn:
     if not uploaded:
@@ -354,9 +354,9 @@ if analyze_btn:
                 st.stop()
             try: os.unlink(tmp_in)
             except: pass
- 
+
         tn_display = result.get("target_number","") or "All Numbers"
- 
+
         st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
         st.markdown(f"""
         <div class="result-banner">
@@ -373,7 +373,7 @@ if analyze_btn:
             <div class="rs"><div class="rs-num">{result.get("total_sms",0)}</div><div class="rs-lbl">Total SMS</div></div>
           </div>
         </div>""", unsafe_allow_html=True)
- 
+
         if os.path.exists(tmp_html):
             with open(tmp_html,"rb") as f: html_bytes = f.read()
             try: os.unlink(tmp_html)
@@ -381,7 +381,7 @@ if analyze_btn:
             base_name = os.path.splitext(uploaded.name)[0]
             tn_sfx = f"_{result.get('target_number','')}" if result.get("target_number") else ""
             dl_name = f"{base_name}{tn_sfx}_intelligence_report.html"
- 
+
             c1,c2,c3 = st.columns([1,2,1])
             with c2:
                 st.download_button(
@@ -395,5 +395,5 @@ if analyze_btn:
             <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
               ℹ️ The HTML report also contains a built-in Download button for offline saving.
             </div>""", unsafe_allow_html=True)
- 
+
         st.markdown('</div>', unsafe_allow_html=True)
