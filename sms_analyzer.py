@@ -467,10 +467,12 @@ def build_bank_summary(sms_list):
 
     RECV_RE = re.compile(
         r'credited|deposited|received|cash\s+in|add\s+money|has been received'
-        r'|payment received|you have received|recharged', re.I)
+        r'|payment received|you have received|recharged|money received', re.I)
     SEND_RE = re.compile(
-        r'debited|withdrawn|deducted|send\s+money|payment|cash\s+out'
-        r'|transfer(red)?|has been sent|withdrawn|you sent', re.I)
+        r'debited|withdrawn|deducted|send\s+money|cash\s+out'
+        r'|transferred|has been sent|you sent'
+        r'|payment of tk|payment is successful|payment to'
+        r'|loan repayment|bill pay|topup|is successful', re.I)
 
     for s in sms_list:
         ai = s.get("acct", {})
@@ -514,13 +516,14 @@ def build_bank_summary(sms_list):
     return result
 
 
-def generate_html(sms_list, stats, out_path, tn=""):
+def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
     now       = datetime.now().strftime("%d %B %Y, %I:%M %p")
     months    = sorted({s["month"] for s in sms_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in sms_list)
     tier_cnt  = Counter(s["tier"] for s in sms_list)
     cat_cnt   = Counter(c for s in sms_list for c in s["categories"])
-    bank_summ = build_bank_summary(sms_list)
+    # Summary তে সব financial SMS (১ টাকা থেকে), card এ শুধু ১০K+
+    bank_summ = build_bank_summary(all_financial if all_financial else sms_list)
     smsmt_count = sum(1 for s in sms_list if s.get("direction") == "SMSMT")
     smsmo_count = sum(1 for s in sms_list if s.get("direction") == "SMSMO")
     MONTH_EN = {"01":"January","02":"February","03":"March","04":"April","05":"May",
@@ -876,8 +879,14 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     merged_ = merge(raw)
     filtered_cnt = 0
+    all_financial = []  # summary এর জন্য সব financial SMS (১ টাকা থেকে)
     results = []
     seen = set()
+
+    SMALL_FIN_RE = re.compile(
+        r'(?:tk|taka|bdt|৳)\s*[0-9].*(?:credited|debited|received|payment|cash\s*in|cash\s*out'
+        r'|withdrawn|transferred|successful|send\s*money|loan repayment)',
+        re.I | re.S)
 
     for item in merged_:
         if not item["body"].strip(): continue
@@ -892,6 +901,29 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         if res:
             res["parts"] = item.get("parts",1)
             results.append(res)
+            if res.get("acct") and res["acct"].get("service"):
+                all_financial.append(res)
+        else:
+            # analyze_one None দিলেও financial SMS হলে summary তে রাখো
+            st = stype(item["sender"])
+            body_st = detect_service_from_body(item["body"])
+            if st in ("mfs","bank") or body_st in ("mfs","bank"):
+                amt = get_amount(item["body"])
+                if amt > 0 and SMALL_FIN_RE.search(item["body"]):
+                    from datetime import datetime as _dt
+                    def to_month(d):
+                        if isinstance(d, _dt): return d.strftime('%Y-%m')
+                        try: return _dt.strptime(str(d)[:10],'%Y-%m-%d').strftime('%Y-%m')
+                        except: return ""
+                    acct = get_acct(item["sender"], item["body"], amt)
+                    if acct.get("service"):
+                        all_financial.append({
+                            "sender": item["sender"], "body": item["body"],
+                            "date": str(item["date"]), "month": to_month(item["date"]),
+                            "sender_type": st, "categories": [],
+                            "amount": amt, "tier": "", "acct": acct,
+                            "direction": item.get("direction","")
+                        })
 
     stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt}
 
@@ -903,7 +935,7 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         tn = m.group(1) if m else ""
     if tn.startswith('880') and len(tn)>11: tn='0'+tn[3:]
 
-    generate_html(results, stats, html_out, tn)
+    generate_html(results, stats, html_out, tn, all_financial)
     tc = Counter(s["tier"] for s in results)
     return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
             "filtered":filtered_cnt,"total_shown":len(results),
