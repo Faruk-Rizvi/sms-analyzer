@@ -534,10 +534,9 @@ def generate_html(sms_list, stats, out_path, tn=""):
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SMS Intelligence Report — {esc(tn) if tn else "All Numbers"}</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Bengali:wght@400;600;700&family=JetBrains+Mono:wght@500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size:14px}}
+body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px}}
 .topbar{{background:linear-gradient(135deg,#1a0505 0%,#7b0d0d 45%,#c0392b 100%);
   padding:0 28px;height:66px;display:flex;align-items:center;justify-content:space-between;
   position:sticky;top:0;z-index:200;box-shadow:0 2px 12px rgba(0,0,0,.2)}}
@@ -550,10 +549,10 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .cfbadge{{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
   font-size:9px;font-weight:700;letter-spacing:2px;padding:3px 10px;border-radius:20px}}
 .tnbadge{{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
-  font-size:11px;padding:3px 10px;border-radius:20px;font-family:'JetBrains Mono',monospace}}
+  font-size:11px;padding:3px 10px;border-radius:20px;font-family:'Courier New',monospace}}
 .dl-top{{display:flex;align-items:center;gap:6px;background:#fff;color:#c0392b;
   font-size:12px;font-weight:700;padding:7px 16px;border-radius:20px;cursor:pointer;
-  border:none;font-family:'Outfit',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:all .2s;
+  border:none;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:all .2s;
   text-decoration:none}}
 .dl-top:hover{{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.2)}}
 .summary-sheet{{background:linear-gradient(135deg,#0f172a,#1e293b);
@@ -561,10 +560,10 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .ss-header{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:20px;flex-wrap:wrap}}
 .ss-title{{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ss-sub{{font-size:12px;color:rgba(255,255,255,.5)}}
-.ss-meta{{text-align:right;font-size:11px;color:rgba(255,255,255,.4);font-family:'JetBrains Mono',monospace;line-height:1.8}}
+.ss-meta{{text-align:right;font-size:11px;color:rgba(255,255,255,.4);font-family:'Courier New',monospace;line-height:1.8}}
 .ss-grid{{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}}
 .ss-box{{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px;text-align:center}}
-.ss-num{{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:3px}}
+.ss-num{{font-size:26px;font-weight:800;font-family:'Courier New',monospace;line-height:1;margin-bottom:3px}}
 .ss-lbl{{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px}}
 .ss-box.red{{border-color:rgba(192,57,43,.5);background:rgba(192,57,43,.15)}}
 .ss-box.grn{{border-color:rgba(22,163,74,.5);background:rgba(22,163,74,.1)}}
@@ -579,7 +578,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .sgrid{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}}
 .sc2{{background:#f8fafc;border:1px solid #e8eaed;border-radius:8px;padding:10px;text-align:center}}
 .sc2.full{{grid-column:1/-1}}
-.sc2-num{{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:2px}}
+.sc2-num{{font-size:22px;font-weight:700;font-family:'Courier New',monospace;line-height:1;margin-bottom:2px}}
 .sc2-lbl{{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.3px}}
 .tinfo{{background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:8px 10px;font-size:11px;color:#78350f;line-height:1.7;margin-bottom:8px}}
 .tinfo b{{color:#92400e}}
@@ -588,16 +587,16 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .slbl{{font-size:10px;color:#475569;flex:1;line-height:1.4}}
 .sbar-w{{width:48px;height:3px;background:#f1f5f9;border-radius:2px;overflow:hidden}}
 .sbar{{height:100%;border-radius:2px}}
-.scnt{{font-size:10px;color:#9ca3af;font-family:'JetBrains Mono',monospace;min-width:18px;text-align:right}}
+.scnt{{font-size:10px;color:#9ca3af;font-family:'Courier New',monospace;min-width:18px;text-align:right}}
 .acct-card{{background:#f8fafc;border:1px solid #e8eaed;border-radius:8px;padding:10px 11px;margin-bottom:7px}}
 .acct-svc{{font-size:13px;font-weight:700;margin-bottom:7px}}
 .acct-grid4{{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}}
 .ag-c{{background:#fff;border:1px solid #e8eaed;border-radius:5px;padding:5px 4px;text-align:center}}
-.ag-v{{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1}}
+.ag-v{{font-size:13px;font-weight:700;font-family:'Courier New',monospace;line-height:1}}
 .ag-l{{font-size:9px;color:#9ca3af;margin-top:2px}}
-.ag-bal{{font-size:10px;color:#16a34a;font-family:'JetBrains Mono',monospace;
+.ag-bal{{font-size:10px;color:#16a34a;font-family:'Courier New',monospace;
   background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;padding:4px 7px;margin-bottom:4px}}
-.acct-num{{font-size:10px;color:#2563eb;font-family:'JetBrains Mono',monospace;padding:2px 0;border-bottom:1px solid #f1f5f9}}
+.acct-num{{font-size:10px;color:#2563eb;font-family:'Courier New',monospace;padding:2px 0;border-bottom:1px solid #f1f5f9}}
 .acct-num:last-child{{border-bottom:none}}
 .fbar{{background:#fff;border-bottom:1px solid #e8eaed;padding:10px 22px;
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04)}}
@@ -621,24 +620,24 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .sc-head{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;gap:10px}}
 .sc-left{{display:flex;align-items:center;gap:9px;min-width:0}}
 .snum{{background:#f1f5f9;border:1px solid #e2e8f0;color:#9ca3af;
-  font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0}}
-.snm{{font-family:'JetBrains Mono',monospace;font-size:13px;color:#2563eb;font-weight:600;
+  font-family:'Courier New',monospace;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0}}
+.snm{{font-family:'Courier New',monospace;font-size:13px;color:#2563eb;font-weight:600;
   display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
 .sdate{{font-size:10px;color:#9ca3af;margin-top:2px}}
 .sc-right{{display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}}
 .rbadge{{font-size:9px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;letter-spacing:.5px}}
-.amt-tag{{color:#fff;font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 10px;border-radius:20px;font-weight:700}}
+.amt-tag{{color:#fff;font-size:11px;font-family:'Courier New',monospace;padding:3px 10px;border-radius:20px;font-weight:700}}
 .merged-tag{{background:#dbeafe;color:#1e40af;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:600;margin-left:5px}}
 .dir-in{{background:#dcfce7;color:#15803d;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .dir-out{{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .acct-mini{{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;
   padding:6px 10px;margin-bottom:8px;font-size:11px;color:#0369a1;
-  font-family:'JetBrains Mono',monospace;line-height:1.7}}
+  font-family:'Courier New',monospace;line-height:1.7}}
 .acct-mini code{{background:#dbeafe;color:#1e40af;padding:1px 4px;border-radius:3px}}
-.sbody{{font-size:13px;line-height:1.9;color:#374151;font-family:'Noto Serif Bengali',serif;
+.sbody{{font-size:13px;line-height:1.9;color:#374151;font-family:inherit;
   padding:10px 13px;border-radius:7px;border:1px solid #e2e8f0;white-space:pre-wrap;word-break:break-word}}
 .sbody mark{{background:#fef08a;color:#713f12;padding:1px 4px;border-radius:3px;
-  font-weight:700;font-family:'JetBrains Mono',monospace}}
+  font-weight:700;font-family:'Courier New',monospace}}
 .sc-foot{{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}}
 .ctag{{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:500}}
 .no-result{{text-align:center;padding:60px;color:#9ca3af}}
@@ -793,15 +792,6 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         tn = m.group(1) if m else ""
     if tn.startswith('880') and len(tn)>11: tn='0'+tn[3:]
 
-    generate_html(results, stats, html_out, tn)
-    tc = Counter(s["tier"] for s in results)
-    return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
-            "filtered":filtered_cnt,"total_shown":len(results),
-            "high":tc.get("high",0),"med":tc.get("med",0),"small":tc.get("small",0)}
-    base = os.path.splitext(os.path.basename(input_path))[0]
-    m = re.search(r'(\d{10,})', base)
-    tn = m.group(1) if m else ""
-    if tn.startswith('880'): tn='0'+tn[3:]
     generate_html(results, stats, html_out, tn)
     tc = Counter(s["tier"] for s in results)
     return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
