@@ -82,8 +82,89 @@ OPERATOR_BODY_RE = re.compile(
     r'|ডায়েলে|রিচার্জ.*ডায়াল|ডায়াল.*রিচার্জ'
     r'|bonus.*mb|mb.*bonus|free.*sms|sms.*free'
     r'|আপনার প্যাক|আপনার অফার|special offer.*tk|tk.*special offer'
-    r'|এয়ারটেল|airtel offer|robi offer|gp offer|bl offer'
-    r'|\d+দিন/\*|\d+মিনিট.*\*\d|\*\d+\*\d+\*\d+#',
+    # Operator name সরাসরি body তে
+    r'|এয়ারটেল|airtel\s+এ\s|airtel\s+এখন|airtel\s+offer|airtel\s+এর'
+    r'|airtel internet|airtel apn|airtel-internet|airtel 4g|airtel এ মাত্র'
+    r'|প্রিয় airtel|প্রিয়.*airtel|airtel গ্রাহক'
+    r'|treat pro|treat master|treat basic|airtel treat|airtel loyalty'
+    r'|পয়েন্টস এর মেয়াদ|য়েন্টস এর মেয়াদ|points.*মেয়াদ'
+    r'|robi offer|robi এ |gp offer|bl offer|banglalink offer|teletalk offer'
+    r'|grameenphone offer|\d+পয়সা/সেকেন্ড|\d+paisa/sec'
+    r'|\d+দিন/\*|\d+মিনিট.*\*\d|\*\d+\*\d+\*\d+#'
+    # পয়সা/সেকেন্ড rate offer
+    r'|পয়সা.*সেকেন্ড.*রিচার্জ|রিচার্জ.*পয়সা.*সেকেন্ড'
+    r'|apn.*settings|profile name.*apn|apn:',
+    re.I
+)
+
+OPERATOR_NAME_IN_BODY_RE = re.compile(
+    # Bengali operator names with all suffix forms (-তে/-এ/-র/-এর/-ে)
+    r'এয়ারটেল|airtel'
+    r'|রবিতে|রবিএ|রবির|রবিতে|\brobi\b'
+    r'|জিপিতে|জিপিএ|জিপির|grameenphone|\bgp\b'
+    r'|বাংলালিংক|banglalink'
+    r'|টেলিটক|teletalk'
+    # Operator promotional patterns without name
+    r'|শক্তিশালী.*নেটওয়ার্ক|নেটওয়ার্ক.*শক্তিশালী'
+    r'|রিচার্জেই.*কথা|কথা.*রিচার্জেই'
+    r'|১প/সে|পয়সা/সেকেন্ড|p/sec.*call|paisa.*sec'
+    r'|পুরো মাস.*জুড়ে|মাস জুড়ে.*মিনিট'
+    r'|ইমার্জেন্সি ব্যালেন্স|ইমার্জেন্সি.*লোন|লোন.*ডায়াল'
+    r'|সেরা অফার.*এখন|শুধু আপনার জন্য সেরা'
+    r'|বেশি মিনিট.*বেশি মেয়াদ'
+    # Data pack/offer details (operator pack info without operator name)
+    r'|\d+\s*gb.*\d+\s*days|\d+\s*days.*\d+\s*gb'
+    r'|TK\d+.*\d+GB|\d+GB.*TK\d+'
+    r'|ক্যাশব্যাক.*রিচার্জ|রিচার্জ.*ক্যাশব্যাক'
+    r'|রমজান.*ফ্যামিলি প্ল্যান|ফ্যামিলি প্ল্যান.*মিনিট'
+    r'|শেয়ার করুন.*জন প্রিয়'
+    # Govt advisory/warning messages
+    r'|জুয়া থেকে দূরে|জুয়া খেলা|বিএফআইইউ|bfiu'
+    r'|ভূমিসেবা|ভূমি মন্ত্রণালয়|ভূমিসেবী'
+    r'|কারাদন্ড.*অর্থদন্ড|অর্থদন্ড.*কারাদন্ড'
+    r'|ক্রীড়াসেবী.*বৃত্তি|শিক্ষা বৃত্তির জন্য'
+    # Operator prize/quiz
+    r'|iphone.*জিতুন|জিতুন.*কুইজ|\*213\*|\*213#'
+    r'|কুইজ পার্টিসিপেট'
+    # Monthly usage summary from operator
+    r'|রিচার্জঃ.*খরচঃ.*ভয়েসঃ'
+    r'|জানুয়ারি\d+\s*রিচার্জ|ফেব্রুয়ারি\d+\s*রিচার্জ'
+    # OTP from non-financial services
+    r'|one time password.*login|otp.*login|login.*otp'
+    r'|দোকানে রিচার্জ|বিকাশ.*নগদ.*থেকে কিনুন|নগদ.*থেকে কিনুন'
+    r'|ক্যাশব্যাক চলবে|ক্যাশব্যাক.*১৪|ক্যাশব্যাক.*১৫|ক্যাশব্যাক.*১৬'
+    r'|প্যাকের অবশিষ্ট ভলিউম|অবশিষ্ট.*GB|অবশিষ্ট.*MB'
+    r'|\d+tk\s+\d+d\s+প্যাকের|30d প্যাকের|প্যাক.*অবশিষ্ট'
+    r'|ফেরত ৳\d+|ফেরত.*৳.*মিনিট|মিনিট.*ফেরত.*৳'
+    r'|জাতীয় দুর্যোগ প্রস্তুতি|দুর্যোগ.*দিবস'
+    r'|গণহত্যা দিবস|গণহত্যায় স্তব্ধ|মুক্তিযুদ্ধের চেতনায়'
+    r'|জাতীয় দিবস.*শুভেচ্ছা|শুভ নববর্ষ.*উৎসব'
+    r'|মৎস্য অধিদপ্তর|মৎস্য ও প্রাণিসম্পদ'
+    r'|বাংলা একাডেমি|অটিজম কোনো সীমাবদ্ধতা'
+    r'|cinematic\.mobi|shakib khan.*movie|rongbaaz'
+    r'|cinematic service otp|medico service otp'
+    r'|notunkuri.*sports|শুমারিকর্মী|মহান মে দিবস'
+    r'|পেশাগত স্বাস্থ্য|সুস্থ শ্রমিক|কর্মঠ হাত'
+    r'|কেআইবি কমপ্লেক্স|খামারবাড়ি.*মেলা'
+    r'|ক্ষণ সপ্তাহ|প্রীতিতে আবদ্ধ|পাহাড় ও সমতল'
+    r'|[\u4e00-\u9fff]{3,}|[\u1100-\u11ff]{3,}'
+    r'|[\uac00-\ud7af]{3,}'
+    # Govt/health/BTRC advisory
+    r'|টাইফয়েড|কলেরা|ডেঙ্গু.*সতর্ক|জীবাণু.*সংক্রমণ'
+    r'|দুদক|গণভোট|নির্বাচন.*দুর্নীতি|দুর্নীতিবাজ'
+    r'|নতুন বাংলাদেশ গড়তে|দেশকে ভালোবাসুন'
+    r'|ইশারা ভাষা|বাক-শ্রবণ|প্রতিবন্ধী'
+    r'|হ্যান্ডসেট.*ডি-রেজিস্ট্রেশন|ডি-রেজিস্ট্রেশন'
+    r'|সম্পদ পাচার|ভালোবাসা খুঁজে'
+    # Ringtone/Goongoon/entertainment SMS
+    r'|goongoon|গুনগুন|ringtone.*set|\.sms\.|৳১৪/সপ্তাহ'
+    r'|গানটি আপনার.*সেট|হিসেবে সেট কর'
+    # Operator pack renewal/failure
+    r'|পর্যাপ্ত ব্যালেন্সের অভাবে|রিনিউয়ের জন্য রিচার্জ'
+    r'|treat legend|treat pro|treat master|treat basic'
+    r'|AT_\d+Tk_|USSD_Bundle|অটো-রিনিউয়াল'
+    # Political/social forwards
+    r'|গণভোটে হ্যাঁ|নবী মোর পরশ',
     re.I
 )
 
@@ -104,8 +185,11 @@ def is_filtered(sender, body):
         # Personal BD নম্বর থেকে operator-style bulk SMS ফিল্টার
         # কিন্তু Bank/MFS মেসেজ হলে filter করবে না
         if st == "personal":
-            if BANK_BODY_SAFE_RE.search(body): return False  # IBBL/bKash — রাখো
+            # operator নাম আগে থাকলে bank keyword থাকলেও filter
+            if OPERATOR_NAME_IN_BODY_RE.search(body[:30]): return True
+            if BANK_BODY_SAFE_RE.search(body): return False
             if OPERATOR_BODY_RE.search(body): return True
+            if OPERATOR_NAME_IN_BODY_RE.search(body): return True
         return False
     if SC_RE.match(s): return True
     sl = s.lower()
@@ -384,8 +468,10 @@ def load_xlsx(path):
     mi=ci(['message content','message','body']); ti=ci(['start','date','time'])
     di=ci(['direction'])  # SMSMT / SMSMO / MTSMS
     out=[]
+    import unicodedata
+    def norm(s): return unicodedata.normalize('NFC', str(s).strip()) if s else ""
     for r in rows[1:]:
-        def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] else ""
+        def g(i): return norm(r[i]) if i is not None and i<len(r) and r[i] else ""
         aparty    = g(ai)
         bparty    = g(bi) if bi is not None else ""
         body      = g(mi)
@@ -879,7 +965,46 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     merged_ = merge(raw)
     filtered_cnt = 0
-    all_financial = []  # summary এর জন্য সব financial SMS (১ টাকা থেকে)
+
+    # ── AUTO-BLACKLIST ──────────────────────────────────────────
+    # যে personal নম্বর থেকে ≥80% operator মেসেজ আসে, সেই নম্বর blacklist
+    # (courier/bank/shopping মেসেজ exempt)
+    SAFE_BODY_RE = re.compile(
+        # Courier / Shopping
+        r'paperfly|steadfast|pathao|redx|sundarban|courier|parcel|delivery'
+        r'|bayerp|bay.*vn:|thanks for choosing'
+        # Bank / MFS
+        r'|bkash|nagad|ibbl|brac.*bank|islami.*bank|credited|debited'
+        # ব্যক্তিগত গুরুত্বপূর্ণ মেসেজ — সবসময় রাখতে হবে
+        r'|বিবাহ.*বার্ষ|বিবাহ.*বাষ|বিবাহ.*বাৎসর|anniversary'
+        r'|জন্মদিন|শুভ জন্মদিন|happy birthday|জন্মদিনের শুভেচ্ছা'
+        r'|ভর্তি.*স্কুল|স্কুল.*ভর্তি|ভর্তি.*কলেজ|ভর্তি.*মাদ্রাসা'
+        r'|admission.*school|school.*admission'
+        r'|বেতন.*পেয়েছি|বেতন.*পাঠিয়েছি|বেতন.*দিয়েছি|বেতন.*দাও'
+        r'|salary.*received|salary.*sent|মাসের বেতন|বেতন প্রদান'
+        r'|টাকা পাঠাও|টাকা পাঠিয়েছি|টাকা পেয়েছি|টাকা দরকার'
+        r'|অসুস্থ|হাসপাতাল|ডাক্তার.*দেখাও|ডাক্তার.*দেখাতে'
+        r'|বিয়ে.*তারিখ|বিয়ে.*অনুষ্ঠান|বিয়ের.*দাওয়াত'
+        r'|আসতে পারবে|আসতে পারবেন|কখন আসবে|কোথায় আছ',
+        re.I
+    )
+    from collections import Counter as _Counter
+    sender_op_count = _Counter()
+    sender_total = _Counter()
+    for item in merged_:
+        s = item['sender']
+        if stype(s) != 'personal': continue
+        sender_total[s] += 1
+        if is_filtered(s, item['body']):
+            sender_op_count[s] += 1
+
+    operator_senders = set()
+    for s, total in sender_total.items():
+        if total >= 5 and sender_op_count[s] / total >= 0.80:
+            operator_senders.add(s)
+    # ────────────────────────────────────────────────────────────
+
+    all_financial = []
     results = []
     seen = set()
 
@@ -890,6 +1015,9 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     for item in merged_:
         if not item["body"].strip(): continue
+        # Auto-blacklisted sender — safe body (courier/bank) ছাড়া সব বাদ
+        if item["sender"] in operator_senders and not SAFE_BODY_RE.search(item["body"]):
+            filtered_cnt+=1; continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
         body_key  = item["body"].strip()
         dt_str    = str(item["date"])[:16]
