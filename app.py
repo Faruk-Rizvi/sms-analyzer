@@ -99,7 +99,7 @@ footer{display:none}
 .prev-card.b{background:#eff6ff;border-color:#bfdbfe}
 .pc-icon{font-size:20px;margin-bottom:8px;display:block}
 .pc-lbl{font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-.pc-val{font-size:20px;font-weight:800;font-family:'Courier New',monospace;letter-spacing:-1px}
+.pc-val{font-size:20px;font-weight:800;letter-spacing:-0.5px}
 .pc-desc{font-size:11px;color:#9ca3af;margin-top:3px}
 .r .pc-val{color:#b91c1c}.o .pc-val{color:#c2410c}
 .a .pc-val{color:#b45309}.b .pc-val{color:#1d4ed8}
