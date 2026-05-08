@@ -40,11 +40,21 @@ SC_RE = re.compile(r'^\d{4,8}$')
 OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comeback',
          'at_boishakh','atforlife','monthly_minutes','airtel_data','airteloffer',
          'airtelbonus','combop','limitedtime','ajker_offer','mini_combo','mini_pack',
-         'bishalof','bondho_','specialpack','darun_offer','beshi_min','goongoon',
+         'bishalof','bishalof','bondho_','specialpack','darun_offer','beshi_min','goongoon',
          'secretoffer','tong offer','lucky_hour','best_deal','cashback','myfamily',
          'myrobi','nagad_offer','apnar_offer','gp','gpstar','gp-info','gpalert',
          'grameenphone','robi','banglalink','bl-','mybl','bl offer','bl commerce',
-         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert']
+         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert',
+         # নতুন — Excel থেকে পাওয়া missing operators
+         'aiartelsaver','airtelsaver','airtel best','airtel-tong','airtelvoice',
+         'airtel_hub','airtel_loan','airtelcares','airtel_','atforlife',
+         'beshi meyad','beshi_kotha','best_voice','bishalof','bishaloff',
+         'bondho_sim','combopack','combo pack','darun_offer','newyroffer',
+         'newyr','shera offer','super_deal','voice_60day','iphone14',
+         'rb ','1paisa','30min_','75min_','at rebate','at_200min','at_250min',
+         'at_30day','at_500min','at_50min','beshi','best_','tong','voice_',
+         'ajker','apnar','lucky','secret','special','darun','goongoon',
+         'mini_','monthly_','myfamily','myrobi','nagad_']
 
 SKIP_BODY_RE = re.compile(
     r"whatsapp\.com|Let's chat on WhatsApp|Let's video call|imo\.onelink|imo-তে"
@@ -53,7 +63,11 @@ SKIP_BODY_RE = re.compile(
     r"|Can't talk now|I'll be there soon|This invite expires"
     r"|প্রিয় গ্রাহক.*কল|প্রিয় গ্রাহক.*offer|প্রিয় গ্রাহক.*অফার"
     r"|আপনার নম্বরে.*কল|আপনাকে কল|missed call notification"
-    r"|voice call|video call|incoming call|outgoing call",
+    r"|voice call|video call|incoming call|outgoing call"
+    # URL shortener + promo offer filter
+    r"|cutt\.ly|bit\.ly|tinyurl|goo\.gl|t\.ly|rb\.gy|ow\.ly|tiny\.cc"
+    r"|ছাড়ে.*টিকেট|টিকেট.*ছাড়|discount.*ticket|ticket.*discount"
+    r"|promo.*recharge|promo recharge|ছাড় কোড|coupon code|promo code",
     re.I)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস', re.I)
@@ -73,6 +87,14 @@ OPERATOR_BODY_RE = re.compile(
     re.I
 )
 
+BANK_BODY_SAFE_RE = re.compile(
+    r'islami\s*bank|ibbl|brac\s*bank|trust\s*bank|sonali\s*bank|dutch.bangla|dbbl'
+    r'|bkash|nagad|rocket|upay|a/c\s*#|a/c\s*no|account\s*no'
+    r'|has been (credited|debited|deposited|transferred|withdrawn)'
+    r'|balance\s*(tk|bdt)|trxid|transaction\s*id',
+    re.I
+)
+
 def is_filtered(sender, body):
     s  = str(sender).strip()
     st = stype(s)
@@ -80,7 +102,10 @@ def is_filtered(sender, body):
         if SKIP_BODY_RE.search(body): return True
         if MISSED_RE.search(body): return True
         # Personal BD নম্বর থেকে operator-style bulk SMS ফিল্টার
-        if st == "personal" and OPERATOR_BODY_RE.search(body): return True
+        # কিন্তু Bank/MFS মেসেজ হলে filter করবে না
+        if st == "personal":
+            if BANK_BODY_SAFE_RE.search(body): return False  # IBBL/bKash — রাখো
+            if OPERATOR_BODY_RE.search(body): return True
         return False
     if SC_RE.match(s): return True
     sl = s.lower()
@@ -362,13 +387,21 @@ def load_xlsx(path):
     for r in rows[1:]:
         def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] else ""
         aparty    = g(ai)
-        sender    = g(bi) if bi is not None else (g(ai) if ai is not None else g(si))
+        bparty    = g(bi) if bi is not None else ""
         body      = g(mi)
         date      = r[ti] if ti is not None and ti<len(r) else ""
         direction = g(di).upper() if di is not None else ""
-        # Normalize: SMSMT / MTSMS = incoming; SMSMO / MOSMS = outgoing
+        # Normalize direction
         if direction in ("SMSMT","MTSMS"): direction = "SMSMT"
         elif direction in ("SMSMO","MOSMS"): direction = "SMSMO"
+
+        # ── CORRECT LOGIC ──
+        # এই ফাইল format এ:
+        # SMSMT: AParty = subscriber, BParty = actual sender (IBBL, ComboPack, bKash...)
+        # SMSMO: AParty = subscriber, BParty = recipient
+        # সবসময় BParty = actual sender/recipient
+        sender = bparty if bparty else aparty
+
         if sender and body:
             out.append({"sender":sender,"body":body,"date":date,
                         "aparty":aparty,"direction":direction})
@@ -405,10 +438,11 @@ MONTH_BN = {"01":"জানুয়ারি","02":"ফেব্রুয়া
             "10":"অক্টোবর","11":"নভেম্বর","12":"ডিসেম্বর"}
 
 def build_bank_summary(sms_list):
-    """প্রতিটি ব্যাংক/MFS-এর লেনদেন সামারি তৈরি"""
+    """প্রতিটি ব্যাংক/MFS-এর সম্পূর্ণ লেনদেন সামারি — ১ টাকা থেকে সর্বোচ্চ"""
     from collections import defaultdict
     summ = defaultdict(lambda:{
-        "service":"","txn_count":0,"total_in":0.0,"total_out":0.0,
+        "service":"","txn_count":0,"recv_count":0,"send_count":0,
+        "total_in":0.0,"total_out":0.0,
         "last_balance":0.0,"max_txn":0.0,"numbers":set()
     })
     SVC_COL = {
@@ -416,23 +450,63 @@ def build_bank_summary(sms_list):
         "Islami Bank":"#1d4ed8","Trust Bank":"#0369a1","Trust Card":"#7c3aed",
         "Sonali Bank":"#047857","BRAC Bank":"#b45309","MetLife":"#0284c7",
     }
+
+    # Amount detection — প্রথম amount = transaction, শেষটা সাধারণত balance
+    # "Balance TK X" অংশ বাদ দিয়ে প্রথম amount নাও
+    BAL_STRIP_RE = re.compile(r'balance\s*(tk|taka|bdt|৳)[^.]*', re.I)
+    TXN_AMT_RE   = re.compile(r'(?:tk|taka|bdt|৳)\s*([0-9,]+(?:\.[0-9]{1,2})?)', re.I)
+
+    def get_txn_amount(body):
+        """Balance বাদ দিয়ে প্রথম transaction amount নাও"""
+        clean = BAL_STRIP_RE.sub('', body)
+        m = TXN_AMT_RE.search(clean)
+        if m:
+            try: return float(m.group(1).replace(',',''))
+            except: pass
+        return 0.0
+
+    RECV_RE = re.compile(
+        r'credited|deposited|received|cash\s+in|add\s+money|has been received'
+        r'|payment received|you have received|recharged', re.I)
+    SEND_RE = re.compile(
+        r'debited|withdrawn|deducted|send\s+money|payment|cash\s+out'
+        r'|transfer(red)?|has been sent|withdrawn|you sent', re.I)
+
     for s in sms_list:
-        ai = s.get("acct",{})
+        ai = s.get("acct", {})
         if not ai or not ai.get("service"): continue
-        svc = ai["service"]; d = summ[svc]
+        svc = ai["service"]
+        d = summ[svc]
         d["service"] = svc
-        if s["tier"]:  # শুধু ট্রানজেকশন SMS গণনা
+
+        # ১ টাকা থেকে সব amount
+        body = s.get("body","")
+        amt = get_txn_amount(body)
+
+        if amt > 0:
             d["txn_count"] += 1
-            amt = ai.get("amount",0) or 0
-            if "গ্রহণ" in (ai.get("direction","") or ""): d["total_in"]  += amt
-            else:                                          d["total_out"] += amt
+            if RECV_RE.search(body):
+                d["total_in"]  += amt
+                d["recv_count"] += 1
+            elif SEND_RE.search(body):
+                d["total_out"] += amt
+                d["send_count"] += 1
+            else:
+                # direction থেকে বোঝার চেষ্টা
+                acct_dir = ai.get("direction","")
+                if "গ্রহণ" in acct_dir or "in" in acct_dir.lower():
+                    d["total_in"]  += amt
+                    d["recv_count"] += 1
+                else:
+                    d["total_out"] += amt
+                    d["send_count"] += 1
             if amt > d["max_txn"]: d["max_txn"] = amt
+
         if ai.get("balance") and ai["balance"] > 0:
             d["last_balance"] = ai["balance"]
         if ai.get("other_number"):
             d["numbers"].add(ai["other_number"])
 
-    # dict → list, set → list
     result = {}
     for svc, d in summ.items():
         result[svc] = {**d, "numbers": list(d["numbers"])[:4],
@@ -521,17 +595,34 @@ def generate_html(sms_list, stats, out_path, tn=""):
                  f'<div class="sbar-w"><div class="sbar" style="width:{pct}%;background:{col}"></div></div>'
                  f'<span class="scnt">{cnt}</span></div>')
     bank_sb=""
+    grand_in  = sum(d["total_in"]  for d in bank_summ.values())
+    grand_out = sum(d["total_out"] for d in bank_summ.values())
+    grand_txn = sum(d["txn_count"] for d in bank_summ.values())
+    if bank_summ:
+        bank_sb += f'''<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px;margin-bottom:10px">
+          <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:8px;letter-spacing:.5px">সর্বমোট লেনদেন ({grand_txn} টি)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="background:#fff;border-radius:8px;padding:8px;text-align:center;border:1px solid #bbf7d0">
+              <div style="font-size:10px;color:#15803d;font-weight:600;margin-bottom:3px">⬇ মোট গ্রহণ</div>
+              <div style="font-size:13px;font-weight:800;color:#15803d">৳{grand_in:,.0f}</div>
+            </div>
+            <div style="background:#fff;border-radius:8px;padding:8px;text-align:center;border:1px solid #fecaca">
+              <div style="font-size:10px;color:#dc2626;font-weight:600;margin-bottom:3px">⬆ মোট প্রদান</div>
+              <div style="font-size:13px;font-weight:800;color:#dc2626">৳{grand_out:,.0f}</div>
+            </div>
+          </div>
+        </div>'''
     for svc,d in bank_summ.items():
         col=d["color"]; nums="".join(f'<div class="acct-num">📱 {n}</div>' for n in d["numbers"])
         bank_sb+=f'''<div class="acct-card" style="border-left:3px solid {col}">
           <div class="acct-svc" style="color:{col}">💳 {esc(svc)}</div>
           <div class="acct-grid4">
-            <div class="ag-c"><div class="ag-v">{d["txn_count"]}</div><div class="ag-l">Transactions</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#16a34a;font-size:11px">৳{d["total_in"]:,.0f}</div><div class="ag-l">Received</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">Sent</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">Highest</div></div>
+            <div class="ag-c"><div class="ag-v">{d["txn_count"]}</div><div class="ag-l">লেনদেন</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#16a34a;font-size:11px">৳{d["total_in"]:,.0f}</div><div class="ag-l">⬇ গ্রহণ ({d["recv_count"]})</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">⬆ প্রদান ({d["send_count"]})</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">সর্বোচ্চ</div></div>
           </div>
-          {f'<div class="ag-bal">💰 Last Balance: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""}
+          {f'<div class="ag-bal">💰 শেষ ব্যালেন্স: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""}
           {nums}</div>'''
     if not bank_sb: bank_sb='<div style="color:#9ca3af;font-size:11px;padding:4px 0">No MFS/Bank data</div>'
     def fb(lbl,js,col=None):
