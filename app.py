@@ -1,6 +1,3 @@
-
-Copy
-
 import streamlit as st
 import tempfile, os, re, base64
 from sms_analyzer import process_file
