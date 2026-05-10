@@ -11,13 +11,10 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── Google Fonts সরানো হয়েছে — system fonts ব্যবহার করা হচ্ছে (বাংলাদেশে দ্রুত লোড) ── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 *,*::before,*::after{box-sizing:border-box}
-html,body,.stApp{
-  background:#f4f5f7!important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif!important;
-}
+html,body,.stApp{background:#f4f5f7!important;font-family:'Outfit',sans-serif}
 .block-container{padding:0!important;max-width:100%!important}
 .stApp>header{display:none}
 section[data-testid="stSidebar"]{display:none}
@@ -99,7 +96,7 @@ footer{display:none}
 .prev-card.b{background:#eff6ff;border-color:#bfdbfe}
 .pc-icon{font-size:20px;margin-bottom:8px;display:block}
 .pc-lbl{font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-.pc-val{font-size:20px;font-weight:800;letter-spacing:-0.5px}
+.pc-val{font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;letter-spacing:-1px}
 .pc-desc{font-size:11px;color:#9ca3af;margin-top:3px}
 .r .pc-val{color:#b91c1c}.o .pc-val{color:#c2410c}
 .a .pc-val{color:#b45309}.b .pc-val{color:#1d4ed8}
@@ -117,7 +114,7 @@ footer{display:none}
 .rb-left p{font-size:13px;color:rgba(255,255,255,.7)}
 .rb-stats{display:flex;gap:20px}
 .rs{text-align:center}
-.rs-num{font-size:24px;font-weight:800;font-family:'Courier New',monospace;color:#fff;line-height:1}
+.rs-num{font-size:24px;font-weight:800;font-family:'JetBrains Mono',monospace;color:#fff;line-height:1}
 .rs-lbl{font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
 .rs.r .rs-num{color:#fca5a5}.rs.o .rs-num{color:#fdba74}.rs.a .rs-num{color:#fde047}
 
@@ -136,20 +133,20 @@ footer{display:none}
 [data-testid="stFileUploaderDropzone"]:hover{border-color:#c0392b!important;background:#fef9f9!important}
 .stTextInput>div>div>input{
   border:1.5px solid #d1d5db!important;border-radius:10px!important;
-  font-family:'Courier New',monospace!important;font-size:13px!important;
+  font-family:'JetBrains Mono',monospace!important;font-size:13px!important;
   padding:10px 14px!important;background:#fafbfc!important;color:#1a1a2e!important}
 .stTextInput>div>div>input:focus{border-color:#c0392b!important;background:#fff!important;
   box-shadow:0 0 0 3px rgba(192,57,43,.1)!important}
 .stButton>button{
   background:linear-gradient(135deg,#c0392b,#96281b)!important;color:#fff!important;
-  border:none!important;border-radius:10px!important;
+  border:none!important;border-radius:10px!important;font-family:'Outfit',sans-serif!important;
   font-size:15px!important;font-weight:700!important;padding:12px 32px!important;
   width:100%!important;box-shadow:0 4px 14px rgba(192,57,43,.35)!important;
   letter-spacing:.3px!important;transition:all .2s!important}
 .stButton>button:hover{transform:translateY(-1px)!important}
 .stDownloadButton>button{
   background:linear-gradient(135deg,#c0392b,#96281b)!important;color:#fff!important;
-  border:none!important;border-radius:10px!important;
+  border:none!important;border-radius:10px!important;font-family:'Outfit',sans-serif!important;
   font-size:14px!important;font-weight:700!important;padding:12px 32px!important;
   width:100%!important;box-shadow:0 4px 14px rgba(192,57,43,.35)!important;
   letter-spacing:.3px!important}
@@ -199,6 +196,7 @@ st.markdown('<div class="main-wrap">', unsafe_allow_html=True)
 col_left, col_right = st.columns([2, 1], gap="large")
 
 with col_left:
+    # Upload
     st.markdown("""
     <div class="panel">
       <div class="ph">
@@ -221,6 +219,7 @@ with col_left:
       <span>ℹ️ Max file size: 200MB</span>
     </div>""", unsafe_allow_html=True)
 
+    # Target number
     st.markdown("""
     <div style="height:18px"></div>
     <div class="panel">
@@ -245,6 +244,7 @@ with col_left:
       When specified, the report will focus on SMS associated with this number.
     </div>""", unsafe_allow_html=True)
 
+    # Engine badge
     st.markdown("""
     <div class="eng">
       <div style="font-size:22px">🔬</div>
@@ -357,6 +357,7 @@ if analyze_btn:
 
         tn_display = result.get("target_number","") or "All Numbers"
 
+        # Result Banner
         st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
         st.markdown(f"""
         <div class="result-banner">
@@ -374,6 +375,7 @@ if analyze_btn:
           </div>
         </div>""", unsafe_allow_html=True)
 
+        # Download
         if os.path.exists(tmp_html):
             with open(tmp_html,"rb") as f: html_bytes = f.read()
             try: os.unlink(tmp_html)
