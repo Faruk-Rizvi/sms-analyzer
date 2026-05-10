@@ -443,13 +443,33 @@ def get_acct(sender, body, amt):
         except: pass
 
     bl2 = body.lower()
-    # Credit = Received (গ্রহণ), Debit = Sent/Withdrawn (প্রদান/উত্তোলন)
-    # Priority: explicit credit/debit keywords first
-    if re.search(r'\bcredited\b|\breceived\b|\bcash\s*in\b|\bdeposit(?:ed)?\b|\bsalary\b|\bfund\s+transfer.*credit', bl2):
+    # Priority 1: "Credit to your account" / "Debit from your account"
+    if re.search(r'credit(?:ed)?\s+to\s+your', bl2):
         info["direction"] = "Received"
-    elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b|\bcash\s*out\b|\bpurchase\b|\bpos\b|\batm\b|\btransfer.*debit', bl2):
+    elif re.search(r'debit(?:ed)?\s+from\s+your', bl2):
         info["direction"] = "Sent"
-    elif re.search(r'\bsent\b', bl2):
+    # Priority 2: standalone CREDIT / DEBIT (Trust Bank format: "Txn TK XXX CREDIT AC No")
+    elif re.search(r'\bcredit\b', bl2):
+        info["direction"] = "Received"
+    elif re.search(r'\bdebit\b', bl2):
+        info["direction"] = "Sent"
+    # Priority 3: explicit credited/debited/withdrawn
+    elif re.search(r'\bcredited\b', bl2):
+        info["direction"] = "Received"
+    elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b', bl2):
+        info["direction"] = "Sent"
+    # Priority 4: transferred to A/C = Sent, deposited from = Received
+    elif re.search(r'transfer(?:red)?\s+to\s+(?:a/c|account)', bl2):
+        info["direction"] = "Sent"
+    elif re.search(r'deposited\s+(?:from|to\s+your)', bl2):
+        info["direction"] = "Received"
+    # Priority 5: MFS & general keywords (including Bangla)
+    elif re.search(r'\breceived\b|\bcash\s*in\b|\bdeposit(?:ed)?\b|\bsalary\b'
+                   r'|পেয়েছেন|ক্যাশ\s*ইন|জমা\s*হয়েছে', bl2):
+        info["direction"] = "Received"
+    elif re.search(r'\bcash\s*out\b|\bpurchase\b|\bpos\s+purchase\b'
+                   r'|\bpayment\s+of\b|\bpaid\b|\bsend\s+money\b|\bsent\b'
+                   r'|ক্যাশ\s*আউট|পাঠিয়েছেন|উত্তোলন\s*করেছেন', bl2):
         info["direction"] = "Sent"
     return info
 
