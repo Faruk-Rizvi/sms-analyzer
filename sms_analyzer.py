@@ -18,14 +18,24 @@ def is_bd(s): return bool(BD_RE.match(str(s).strip()))
 
 # ── Sender type ────────────────────────────────────────────
 MFS_KW    = ['bkash','b-kash','nagad','rocket','dutch-bangla','dbbl','upay','mcash','tap','surecash']
-BANK_KW   = ['ibbl','ibbl .','islami bank','islamibank','trustbank','trust bank','trustcard',
-             'sonali','janata bank','agrani bank','rupali bank','brac bank','bracbank','brac-bank',
-             'city bank','citybank','ebl','eastern bank','prime bank','mutual trust',
-             'southeast bank','ab bank','ucb','hsbc','standard chartered','ific','idlc','metlife',
-             'dutch-bangla','dbbl','nexuspay','sonali bank']
+BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
+             'trustbank','trust bank','trustcard',
+             'sonali','janata bank','agrani bank','rupali bank',
+             'brac bank','bracbank','brac-bank',
+             'city bank','citybank','ebl','eastern bank','prime bank',
+             'mutual trust','mtb.','mtb ','\bmtb\b',
+             'southeast bank','ab bank','ucb','hsbc','standard chartered',
+             'ific','idlc','metlife','dutch-bangla','dbbl','nexuspay','sonali bank']
 
 # Short-code senders that are actually banks (not to be filtered)
-BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}  # 16216=DBBL, others reserved
+BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}
+
+# Promotional / system numbers — সম্পূর্ণ filter
+PROMO_NUMBERS = {
+    '8801886016460','01886016460',
+    '8801782542199','01782542199',   # minute pack notifications
+    '8801554702104','01554702104',   # iBAS system (OTP + election SMS)
+}
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
              'pathao','steadfast','paperfly','redx','sundarban','ecourier','pandago',
@@ -35,8 +45,12 @@ SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chald
 def stype(sender):
     sl = str(sender).lower().strip()
     s  = str(sender).strip()
-    # Bank short-codes — always bank, never filtered
+    # Promotional numbers — filter out
+    if s in PROMO_NUMBERS: return "promo"
+    # Bank short-codes — always bank
     if s in BANK_SHORTCODES: return "bank"
+    # MTB. specific match
+    if re.match(r'^mtb\.?\s*$', sl): return "bank"
     if any(m in sl for m in MFS_KW):  return "mfs"
     if any(b in sl for b in BANK_KW): return "bank"
     if any(s_ in sl for s_ in SVC_KW): return "service"
@@ -80,7 +94,9 @@ OTP_BODY_RE = re.compile(
 def is_filtered(sender, body):
     s  = str(sender).strip()
     st = stype(s)
-    # OTP/key মেসেজ সব বাদ — sender নির্বিশেষে
+    # Promotional numbers — always filter
+    if st == "promo": return True
+    # OTP/key মেসেজ সব বাদ
     if OTP_BODY_RE.search(body): return True
     if st in ("mfs","bank","service","personal"):
         return bool(SKIP_BODY_RE.search(body)) or bool(MISSED_RE.search(body))
@@ -261,16 +277,21 @@ BODY_MFS_RE = re.compile(
 def detect_service_from_body(body):
     """Body থেকে ব্যাংক/MFS শনাক্ত করে"""
     bl = body.lower()
-    if "islami bank" in bl or "ibbl" in bl:        return "bank"
-    if "brac bank" in bl or "bracbank" in bl:       return "bank"
-    if "trust bank" in bl or "trustbank" in bl:     return "bank"
-    if "sonali bank" in bl:                         return "bank"
-    if "dutch-bangla" in bl or "dbbl" in bl:        return "bank"
-    if "mutual trust" in bl:                        return "bank"
-    if "city bank" in bl:                           return "bank"
-    if re.search(r'\bbkash\b', bl):                 return "mfs"
-    if re.search(r'\bnagad\b', bl):                 return "mfs"
-    if re.search(r'\brocket\b', bl) and "balance" in bl: return "mfs"
+    if "islami bank" in bl or re.search(r'\bibbl\b', bl):  return "bank"
+    if "brac bank" in bl or "bracbank" in bl:               return "bank"
+    if "trust bank" in bl or "trustbank" in bl:             return "bank"
+    if "sonali bank" in bl:                                  return "bank"
+    if "dutch-bangla" in bl or re.search(r'\bdbbl\b', bl): return "bank"
+    if "mutual trust" in bl or re.search(r'\bmtb\b', bl) or "mtblbddh" in bl: return "bank"
+    if "city bank" in bl:                                   return "bank"
+    if "southeast bank" in bl or "sebl" in bl:              return "bank"
+    if "ab bank" in bl:                                     return "bank"
+    if "prime bank" in bl:                                  return "bank"
+    if "ucb" in bl and "bank" in bl:                        return "bank"
+    if "eastern bank" in bl or re.search(r'\bebl\b', bl):  return "bank"
+    if re.search(r'\bbkash\b', bl):                         return "mfs"
+    if re.search(r'\bnagad\b', bl):                         return "mfs"
+    if re.search(r'\brocket\b', bl) and "balance" in bl:   return "mfs"
     return ""
 
 def analyze_one(sender, body, date, direction=""):
@@ -291,20 +312,20 @@ def analyze_one(sender, body, date, direction=""):
         if OTP_RE.search(body) or LOW_BAL_RE.search(body): return None
 
     if st == "personal":
-        if ID_RE.search(body):    cats.append("identity")
-        if LOVE_RE.search(body):  cats.append("love_family")
-        if TRAVEL_RE.search(body):cats.append("travel")
-        if COURIER_RE.search(body):cats.append("courier")
-        if SHOPPING_RE.search(body):cats.append("shopping")
-        if not cats and len(body.strip()) > 20:
-            cats.append("personal")
+        # Priority order — একটাই ক্যাটাগরি নেওয়া হবে
+        if ID_RE.search(body):         cats.append("identity")
+        elif LOVE_RE.search(body):     cats.append("love_family")
+        elif TRAVEL_RE.search(body):   cats.append("travel")
+        elif COURIER_RE.search(body):  cats.append("courier")
+        elif SHOPPING_RE.search(body): cats.append("shopping")
+        elif len(body.strip()) > 20:   cats.append("personal")
         if not cats: return None
 
     elif st in ("service","other"):
-        if TRAVEL_RE.search(body):  cats.append("travel")
-        if COURIER_RE.search(body): cats.append("courier")
-        if SHOPPING_RE.search(body):cats.append("shopping")
-        if ID_RE.search(body):      cats.append("identity")
+        if TRAVEL_RE.search(body):        cats.append("travel")
+        elif COURIER_RE.search(body):     cats.append("courier")
+        elif SHOPPING_RE.search(body):    cats.append("shopping")
+        elif ID_RE.search(body):          cats.append("identity")
         if not cats and not t: return None
 
     if not cats: return None
@@ -315,11 +336,9 @@ def analyze_one(sender, body, date, direction=""):
         except: return ""
 
     acct = {}
-    if st in ("mfs","bank") or t:
+    # Bank/MFS body থেকে detect হলে সবসময় acct calculate করো
+    if st in ("mfs","bank") or t or body_st:
         acct = get_acct(sender, body, amt)
-        # Body থেকে service detect হলে সেটা acct-এ সেট করো
-        if body_st and not acct.get("service"):
-            acct = get_acct(sender, body, amt)
 
     return {"sender":str(sender),"body":body,"date":str(date) if date else "",
             "month":to_month(date),"sender_type":st,"categories":cats,
@@ -334,7 +353,8 @@ def get_acct(sender, body, amt):
 
     # Short-code bank senders
     if s == "16216": info["service"] = "Dutch-Bangla Bank (DBBL)"
-    elif s == "16219": info["service"] = "Mutual Trust Bank"
+    elif s == "16219": info["service"] = "Mutual Trust Bank (MTB)"
+    elif re.match(r'^mtb\.?\s*$', sl): info["service"] = "Mutual Trust Bank (MTB)"
 
     # Sender keyword detect
     if not info["service"]:
@@ -350,29 +370,35 @@ def get_acct(sender, body, amt):
         elif "brac"     in sl: info["service"]="BRAC Bank"
         elif "metlife"  in sl: info["service"]="MetLife"
 
-    # Body fallback
+    # Body fallback — যেকোনো নম্বর থেকে আসলেও bank detect করবে
     if not info["service"]:
-        if "islami bank" in bl or re.search(r'\bibbl\b',bl): info["service"]="Islami Bank"
-        elif "brac bank" in bl:     info["service"]="BRAC Bank"
-        elif "trust bank" in bl:    info["service"]="Trust Bank"
-        elif "sonali bank" in bl:   info["service"]="Sonali Bank"
-        elif re.search(r'\bbkash\b',bl): info["service"]="bKash"
-        elif re.search(r'\bnagad\b',bl): info["service"]="Nagad"
+        if "islami bank" in bl or re.search(r'\bibbl\b',bl):         info["service"]="Islami Bank"
+        elif "brac bank" in bl or "bracbank" in bl:                   info["service"]="BRAC Bank"
+        elif "mutual trust" in bl or "mtblbddh" in bl or re.search(r'\bmtb\b',bl):
+            info["service"]="Mutual Trust Bank (MTB)"
+        elif "trust bank" in bl or "trustbank" in bl:                 info["service"]="Trust Bank"
+        elif "sonali bank" in bl:                                      info["service"]="Sonali Bank"
+        elif re.search(r'\bbkash\b',bl):                              info["service"]="bKash"
+        elif re.search(r'\bnagad\b',bl):                              info["service"]="Nagad"
         elif "dutch-bangla" in bl or re.search(r'\bdbbl\b',bl) or "nexuspay" in bl:
             info["service"]="Dutch-Bangla Bank (DBBL)"
-        elif "mutual trust" in bl:  info["service"]="Mutual Trust Bank"
-        else: info["service"]=s
+        elif "southeast bank" in bl or "sebl" in bl:                  info["service"]="Southeast Bank"
+        elif "prime bank" in bl:                                       info["service"]="Prime Bank"
+        elif "eastern bank" in bl or re.search(r'\bebl\b',bl):       info["service"]="Eastern Bank"
+        elif "city bank" in bl:                                        info["service"]="City Bank"
+        else: info["service"] = s
 
     trx = re.search(r'(?:[Tt]rx|[Tt]xn)\s*[Ii][Dd]?[:\s]+([A-Z0-9]{8,})', body)
     if trx: info["trx_id"]=trx.group(1)
     nums = re.findall(r'\b(01[3-9]\d{8})\b', body)
     if nums: info["other_number"]=nums[0]
 
-    # Balance — C/B pattern (DBBL), Avl Bal, Balance
+    # Balance — C/B pattern (DBBL), Avl Bal, Balance, BDT balance
     bal = re.search(r'C/B\s+Tk([\d,]+\.?\d*)', body)
     if not bal: bal = re.search(r'Avl\s+Bal[:\s]+([\d,]+\.?\d*)', body)
-    if not bal: bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
+    if not bal: bal = re.search(r'available\s+balance.*?(?:is\s+)?BDT\s+([\d,]+\.?\d*)', body, re.I)
     if not bal: bal = re.search(r'A/C\s+Bal\s+BDT\s+([\d,.]+)', body)
+    if not bal: bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
     if bal:
         try: info["balance"]=float(bal.group(1).replace(',',''))
         except: pass
@@ -454,8 +480,8 @@ MONTH_BN = {"01":"জানুয়ারি","02":"ফেব্রুয়া
             "05":"মে","06":"জুন","07":"জুলাই","08":"আগস্ট","09":"সেপ্টেম্বর",
             "10":"অক্টোবর","11":"নভেম্বর","12":"ডিসেম্বর"}
 
-def build_bank_summary(sms_list):
-    """প্রতিটি ব্যাংক/MFS-এর লেনদেন সামারি তৈরি"""
+def build_bank_summary(sms_list, extra_balances=None):
+    if extra_balances is None: extra_balances = {}
     from collections import defaultdict
     summ = defaultdict(lambda:{
         "service":"","txn_count":0,"total_in":0.0,"total_out":0.0,
@@ -465,7 +491,10 @@ def build_bank_summary(sms_list):
         "bKash":"#e11d48","Nagad":"#ea580c","Rocket":"#7c3aed","Upay":"#16a34a",
         "Islami Bank":"#1d4ed8","Trust Bank":"#0369a1","Trust Card":"#7c3aed",
         "Sonali Bank":"#047857","BRAC Bank":"#b45309","MetLife":"#0284c7",
-        "Dutch-Bangla Bank (DBBL)":"#6d28d9","Mutual Trust Bank":"#0891b2",
+        "Dutch-Bangla Bank (DBBL)":"#6d28d9",
+        "Mutual Trust Bank (MTB)":"#0891b2","Mutual Trust Bank":"#0891b2",
+        "Southeast Bank":"#7c2d12","Prime Bank":"#1e40af","Eastern Bank":"#065f46",
+        "City Bank":"#9f1239",
     }
     for s in sms_list:
         ai = s.get("acct",{})
@@ -495,16 +524,33 @@ def build_bank_summary(sms_list):
     for svc, d in summ.items():
         result[svc] = {**d, "numbers": list(d["numbers"])[:4],
                        "color": SVC_COL.get(svc, "#2563eb")}
+
+    # extra_balances — transaction ছাড়া bank balance (যেমন MTB balance notification)
+    for svc, eb in extra_balances.items():
+        if svc not in result:
+            # নতুন entry — শুধু balance আছে, transaction নেই
+            result[svc] = {
+                "service": svc, "txn_count": 0, "total_in": 0.0, "total_out": 0.0,
+                "last_balance": eb["balance"], "last_balance_date": eb["date"],
+                "max_txn": 0.0, "numbers": [],
+                "color": SVC_COL.get(svc, "#2563eb")
+            }
+        else:
+            # Already exists — update balance if extra is more recent
+            if eb["date"] > result[svc].get("last_balance_date",""):
+                result[svc]["last_balance"] = eb["balance"]
+                result[svc]["last_balance_date"] = eb["date"]
     return result
 
 
-def generate_html(sms_list, stats, out_path, tn=""):
+def generate_html(sms_list, stats, out_path, tn="", extra_balances=None):
+    if extra_balances is None: extra_balances = {}
     now       = datetime.now().strftime("%d %B %Y, %I:%M %p")
     months    = sorted({s["month"] for s in sms_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in sms_list)
     tier_cnt  = Counter(s["tier"] for s in sms_list)
     cat_cnt   = Counter(c for s in sms_list for c in s["categories"])
-    bank_summ = build_bank_summary(sms_list)
+    bank_summ = build_bank_summary(sms_list, extra_balances)
     smsmt_count = sum(1 for s in sms_list if s.get("direction") == "SMSMT")
     smsmo_count = sum(1 for s in sms_list if s.get("direction") == "SMSMO")
     MONTH_EN = {"01":"January","02":"February","03":"March","04":"April","05":"May",
@@ -583,6 +629,9 @@ def generate_html(sms_list, stats, out_path, tn=""):
     bank_sb=""
     for svc,d in bank_summ.items():
         col=d["color"]; nums="".join(f'<div class="acct-num">📱 {n}</div>' for n in d["numbers"])
+        # txn_count=0 হলেও সব ব্যাংক দেখাবে যদি balance থাকে
+        if d["txn_count"] == 0 and d["last_balance"] == 0: continue
+        bal_html = f'<div class="ag-bal">💰 Last Balance: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""
         bank_sb+=f'''<div class="acct-card" style="border-left:3px solid {col}">
           <div class="acct-svc" style="color:{col}">💳 {esc(svc)}</div>
           <div class="acct-grid4">
@@ -591,7 +640,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
             <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">Sent</div></div>
             <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">Highest</div></div>
           </div>
-          {f'<div class="ag-bal">💰 Last Balance: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""}
+          {bal_html}
           {nums}</div>'''
     if not bank_sb: bank_sb='<div style="color:#9ca3af;font-size:11px;padding:4px 0">No MFS/Bank data</div>'
     def fb(lbl,js,col=None):
@@ -867,6 +916,24 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt}
 
+    # Bank balance tracking — filter হওয়া bank SMS থেকেও balance সংগ্রহ করি
+    # (যেমন MTB balance notification যেটা transaction না হওয়ায় results-এ নেই)
+    extra_balances = {}  # service → {balance, date}
+    for item in merged_:
+        body   = item["body"]
+        sender = item["sender"]
+        st     = stype(sender)
+        if st not in ("bank","mfs") and not detect_service_from_body(body): continue
+        if is_filtered(sender, body): continue
+        amt  = get_amount(body)
+        acct = get_acct(sender, body, amt)
+        svc  = acct.get("service","")
+        bal  = acct.get("balance",0) or 0
+        if svc and bal > 0:
+            sms_date = str(item.get("date",""))
+            if svc not in extra_balances or sms_date > extra_balances[svc]["date"]:
+                extra_balances[svc] = {"balance": bal, "date": sms_date}
+
     # Target number — filename থেকে বা parameter থেকে
     tn = re.sub(r'[^\d]','', target_number) if target_number else ""
     if not tn:
@@ -875,16 +942,7 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         tn = m.group(1) if m else ""
     if tn.startswith('880') and len(tn)>11: tn='0'+tn[3:]
 
-    generate_html(results, stats, html_out, tn)
-    tc = Counter(s["tier"] for s in results)
-    return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
-            "filtered":filtered_cnt,"total_shown":len(results),
-            "high":tc.get("high",0),"med":tc.get("med",0),"small":tc.get("small",0)}
-    base = os.path.splitext(os.path.basename(input_path))[0]
-    m = re.search(r'(\d{10,})', base)
-    tn = m.group(1) if m else ""
-    if tn.startswith('880'): tn='0'+tn[3:]
-    generate_html(results, stats, html_out, tn)
+    generate_html(results, stats, html_out, tn, extra_balances=extra_balances)
     tc = Counter(s["tier"] for s in results)
     return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
             "filtered":filtered_cnt,"total_shown":len(results),
