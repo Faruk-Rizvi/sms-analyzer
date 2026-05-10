@@ -8,7 +8,7 @@ import openpyxl, re, html as hl, sys, os, csv
 from datetime import datetime
 from collections import Counter
 
-TIER_SMALL = 10_000
+TIER_SMALL = 5_000
 TIER_MED   = 50_000
 TIER_HIGH  = 100_000
 
@@ -33,8 +33,18 @@ BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}
 # Promotional / system numbers — সম্পূর্ণ filter
 PROMO_NUMBERS = {
     '8801886016460','01886016460',
-    '8801782542199','01782542199',   # minute pack notifications
-    '8801554702104','01554702104',   # iBAS system (OTP + election SMS)
+    '8801782542199','01782542199',
+    '8801554702104','01554702104',
+    # নতুন প্রমো/সার্ভিস নম্বর
+    '8801905186028','01905186028',
+    '8801401866071','01401866071',
+    '8801927787270','01927787270',
+    '8801964123108','01964123108',
+    '8801924967582','01924967582',
+    '8801577556527','01577556527',
+    '8801908568652','01908568652',
+    '8801402940991','01402940991',
+    '8801934147013','01934147013',
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -71,7 +81,12 @@ OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comebac
 SKIP_BODY_RE = re.compile(
     r"whatsapp\.com|Let's chat on WhatsApp|Let's video call|imo\.onelink|imo-তে"
     r"|কলটি গ্রহণ করতে পারবেন|Let's have a call|meet\.google\.com"
-    r"|Can't talk now|I'll be there soon|This invite expires",
+    r"|Can't talk now|I'll be there soon|This invite expires"
+    # প্রমোশনাল / লটারি বাংলা keywords
+    r"|পুরস্কার পান|লটারি.বিজয়ী|জেতা সম্ভব|ডেলিভারি ওটিপি"
+    r"|ফ্রি বোনাস পেতে|বোনাসটি অ্যাকাউন্টে জমা হয়েছে"
+    # অপারেটর নাম (হুবহু)
+    r"|\bGrameenphone\b|\bRobi\b|\bAirtel\b|\bBanglalink\b|\bTeletalk\b",
     re.I)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস', re.I)
@@ -908,7 +923,7 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         if not item["body"].strip(): continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
         body_key  = item["body"].strip()
-        dt_str    = str(item["date"])[:16]
+        dt_str    = str(item["date"])[:13]   # YYYY-MM-DD HH — ১ ঘন্টার মধ্যে same body একটাই
         dedup_key = (str(item["sender"]).strip().lower(), body_key, dt_str)
         if dedup_key in seen: filtered_cnt+=1; continue
         seen.add(dedup_key)
