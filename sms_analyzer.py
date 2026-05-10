@@ -21,7 +21,12 @@ MFS_KW    = ['bkash','b-kash','nagad','rocket','dutch-bangla','dbbl','upay','mca
 BANK_KW   = ['ibbl','ibbl .','islami bank','islamibank','trustbank','trust bank','trustcard',
              'sonali','janata bank','agrani bank','rupali bank','brac bank','bracbank','brac-bank',
              'city bank','citybank','ebl','eastern bank','prime bank','mutual trust',
-             'southeast bank','ab bank','ucb','hsbc','standard chartered','ific','idlc','metlife']
+             'southeast bank','ab bank','ucb','hsbc','standard chartered','ific','idlc','metlife',
+             'dutch-bangla','dbbl','nexuspay','sonali bank']
+
+# Short-code senders that are actually banks (not to be filtered)
+BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}  # 16216=DBBL, others reserved
+
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
              'pathao','steadfast','paperfly','redx','sundarban','ecourier','pandago',
              'foodpanda','air astra','biman','us-bangla','novoair','ivac','ivac_bd',
@@ -29,9 +34,12 @@ SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chald
 
 def stype(sender):
     sl = str(sender).lower().strip()
+    s  = str(sender).strip()
+    # Bank short-codes — always bank, never filtered
+    if s in BANK_SHORTCODES: return "bank"
     if any(m in sl for m in MFS_KW):  return "mfs"
     if any(b in sl for b in BANK_KW): return "bank"
-    if any(s in sl for s in SVC_KW):  return "service"
+    if any(s_ in sl for s_ in SVC_KW): return "service"
     if is_bd(sender):                  return "personal"
     return "other"
 
@@ -40,191 +48,88 @@ SC_RE = re.compile(r'^\d{4,8}$')
 OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comeback',
          'at_boishakh','atforlife','monthly_minutes','airtel_data','airteloffer',
          'airtelbonus','combop','limitedtime','ajker_offer','mini_combo','mini_pack',
-         'bishalof','bishalof','bondho_','specialpack','darun_offer','beshi_min','goongoon',
+         'bishalof','bondho_','specialpack','darun_offer','beshi_min','goongoon',
          'secretoffer','tong offer','lucky_hour','best_deal','cashback','myfamily',
          'myrobi','nagad_offer','apnar_offer','gp','gpstar','gp-info','gpalert',
          'grameenphone','robi','banglalink','bl-','mybl','bl offer','bl commerce',
-         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert',
-         # নতুন — Excel থেকে পাওয়া missing operators
-         'aiartelsaver','airtelsaver','airtel best','airtel-tong','airtelvoice',
-         'airtel_hub','airtel_loan','airtelcares','airtel_','atforlife',
-         'beshi meyad','beshi_kotha','best_voice','bishalof','bishaloff',
-         'bondho_sim','combopack','combo pack','darun_offer','newyroffer',
-         'newyr','shera offer','super_deal','voice_60day','iphone14',
-         'rb ','1paisa','30min_','75min_','at rebate','at_200min','at_250min',
-         'at_30day','at_500min','at_50min','beshi','best_','tong','voice_',
-         'ajker','apnar','lucky','secret','special','darun','goongoon',
-         'mini_','monthly_','myfamily','myrobi','nagad_']
+         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert']
 
 SKIP_BODY_RE = re.compile(
     r"whatsapp\.com|Let's chat on WhatsApp|Let's video call|imo\.onelink|imo-তে"
-    r"|কলটি গ্রহণ|এখন কল করুন|কল করুন|call করুন"
-    r"|Let's have a call|meet\.google\.com"
-    r"|Can't talk now|I'll be there soon|This invite expires"
-    r"|প্রিয় গ্রাহক.*কল|প্রিয় গ্রাহক.*offer|প্রিয় গ্রাহক.*অফার"
-    r"|আপনার নম্বরে.*কল|আপনাকে কল|missed call notification"
-    r"|voice call|video call|incoming call|outgoing call"
-    # URL shortener + promo offer filter
-    r"|cutt\.ly|bit\.ly|tinyurl|goo\.gl|t\.ly|rb\.gy|ow\.ly|tiny\.cc"
-    r"|ছাড়ে.*টিকেট|টিকেট.*ছাড়|discount.*ticket|ticket.*discount"
-    r"|promo.*recharge|promo recharge|ছাড় কোড|coupon code|promo code",
+    r"|কলটি গ্রহণ করতে পারবেন|Let's have a call|meet\.google\.com"
+    r"|Can't talk now|I'll be there soon|This invite expires",
     re.I)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস', re.I)
 
-# অপারেটর বা bulk SMS body filter
-OPERATOR_BODY_RE = re.compile(
-    r'প্রিয় গ্রাহক|dear customer|dear subscriber'
-    r'|mb pack|internet pack|data pack|minute pack|combo pack'
-    r'|recharge.*tk|tk.*recharge|balance.*expire|validity.*day'
-    r'|\*4\*\d+\*|dial \*|\*\d+#|press \*'
-    r'|জিবি\+\d+মিনিট|\d+জিবি\+|মিনিট.*ডায়াল|ডায়াল.*মিনিট'
-    r'|ডায়েলে|রিচার্জ.*ডায়াল|ডায়াল.*রিচার্জ'
-    r'|bonus.*mb|mb.*bonus|free.*sms|sms.*free'
-    r'|আপনার প্যাক|আপনার অফার|special offer.*tk|tk.*special offer'
-    # Operator name সরাসরি body তে
-    r'|এয়ারটেল|airtel\s+এ\s|airtel\s+এখন|airtel\s+offer|airtel\s+এর'
-    r'|airtel internet|airtel apn|airtel-internet|airtel 4g|airtel এ মাত্র'
-    r'|প্রিয় airtel|প্রিয়.*airtel|airtel গ্রাহক'
-    r'|treat pro|treat master|treat basic|airtel treat|airtel loyalty'
-    r'|পয়েন্টস এর মেয়াদ|য়েন্টস এর মেয়াদ|points.*মেয়াদ'
-    r'|robi offer|robi এ |gp offer|bl offer|banglalink offer|teletalk offer'
-    r'|grameenphone offer|\d+পয়সা/সেকেন্ড|\d+paisa/sec'
-    r'|\d+দিন/\*|\d+মিনিট.*\*\d|\*\d+\*\d+\*\d+#'
-    # পয়সা/সেকেন্ড rate offer
-    r'|পয়সা.*সেকেন্ড.*রিচার্জ|রিচার্জ.*পয়সা.*সেকেন্ড'
-    r'|apn.*settings|profile name.*apn|apn:',
-    re.I
-)
-
-OPERATOR_NAME_IN_BODY_RE = re.compile(
-    # Bengali operator names with all suffix forms (-তে/-এ/-র/-এর/-ে)
-    r'এয়ারটেল|airtel'
-    r'|রবিতে|রবিএ|রবির|রবিতে|\brobi\b'
-    r'|জিপিতে|জিপিএ|জিপির|grameenphone|\bgp\b'
-    r'|বাংলালিংক|banglalink'
-    r'|টেলিটক|teletalk'
-    # Operator promotional patterns without name
-    r'|শক্তিশালী.*নেটওয়ার্ক|নেটওয়ার্ক.*শক্তিশালী'
-    r'|রিচার্জেই.*কথা|কথা.*রিচার্জেই'
-    r'|১প/সে|পয়সা/সেকেন্ড|p/sec.*call|paisa.*sec'
-    r'|পুরো মাস.*জুড়ে|মাস জুড়ে.*মিনিট'
-    r'|ইমার্জেন্সি ব্যালেন্স|ইমার্জেন্সি.*লোন|লোন.*ডায়াল'
-    r'|সেরা অফার.*এখন|শুধু আপনার জন্য সেরা'
-    r'|বেশি মিনিট.*বেশি মেয়াদ'
-    # Data pack/offer details (operator pack info without operator name)
-    r'|\d+\s*gb.*\d+\s*days|\d+\s*days.*\d+\s*gb'
-    r'|TK\d+.*\d+GB|\d+GB.*TK\d+'
-    r'|ক্যাশব্যাক.*রিচার্জ|রিচার্জ.*ক্যাশব্যাক'
-    r'|রমজান.*ফ্যামিলি প্ল্যান|ফ্যামিলি প্ল্যান.*মিনিট'
-    r'|শেয়ার করুন.*জন প্রিয়'
-    # Govt advisory/warning messages
-    r'|জুয়া থেকে দূরে|জুয়া খেলা|বিএফআইইউ|bfiu'
-    r'|ভূমিসেবা|ভূমি মন্ত্রণালয়|ভূমিসেবী'
-    r'|কারাদন্ড.*অর্থদন্ড|অর্থদন্ড.*কারাদন্ড'
-    r'|ক্রীড়াসেবী.*বৃত্তি|শিক্ষা বৃত্তির জন্য'
-    # Operator prize/quiz
-    r'|iphone.*জিতুন|জিতুন.*কুইজ|\*213\*|\*213#'
-    r'|কুইজ পার্টিসিপেট'
-    # Monthly usage summary from operator
-    r'|রিচার্জঃ.*খরচঃ.*ভয়েসঃ'
-    r'|জানুয়ারি\d+\s*রিচার্জ|ফেব্রুয়ারি\d+\s*রিচার্জ'
-    # OTP from non-financial services
-    r'|one time password.*login|otp.*login|login.*otp'
-    r'|দোকানে রিচার্জ|বিকাশ.*নগদ.*থেকে কিনুন|নগদ.*থেকে কিনুন'
-    r'|ক্যাশব্যাক চলবে|ক্যাশব্যাক.*১৪|ক্যাশব্যাক.*১৫|ক্যাশব্যাক.*১৬'
-    r'|প্যাকের অবশিষ্ট ভলিউম|অবশিষ্ট.*GB|অবশিষ্ট.*MB'
-    r'|\d+tk\s+\d+d\s+প্যাকের|30d প্যাকের|প্যাক.*অবশিষ্ট'
-    r'|ফেরত ৳\d+|ফেরত.*৳.*মিনিট|মিনিট.*ফেরত.*৳'
-    r'|জাতীয় দুর্যোগ প্রস্তুতি|দুর্যোগ.*দিবস'
-    r'|গণহত্যা দিবস|গণহত্যায় স্তব্ধ|মুক্তিযুদ্ধের চেতনায়'
-    r'|জাতীয় দিবস.*শুভেচ্ছা|শুভ নববর্ষ.*উৎসব'
-    r'|মৎস্য অধিদপ্তর|মৎস্য ও প্রাণিসম্পদ'
-    r'|বাংলা একাডেমি|অটিজম কোনো সীমাবদ্ধতা'
-    r'|cinematic\.mobi|shakib khan.*movie|rongbaaz'
-    r'|cinematic service otp|medico service otp'
-    r'|notunkuri.*sports|শুমারিকর্মী|মহান মে দিবস'
-    r'|পেশাগত স্বাস্থ্য|সুস্থ শ্রমিক|কর্মঠ হাত'
-    r'|কেআইবি কমপ্লেক্স|খামারবাড়ি.*মেলা'
-    r'|ক্ষণ সপ্তাহ|প্রীতিতে আবদ্ধ|পাহাড় ও সমতল'
-    r'|[\u4e00-\u9fff]{3,}|[\u1100-\u11ff]{3,}'
-    r'|[\uac00-\ud7af]{3,}'
-    # Govt/health/BTRC advisory
-    r'|টাইফয়েড|কলেরা|ডেঙ্গু.*সতর্ক|জীবাণু.*সংক্রমণ'
-    r'|দুদক|গণভোট|নির্বাচন.*দুর্নীতি|দুর্নীতিবাজ'
-    r'|নতুন বাংলাদেশ গড়তে|দেশকে ভালোবাসুন'
-    r'|ইশারা ভাষা|বাক-শ্রবণ|প্রতিবন্ধী'
-    r'|হ্যান্ডসেট.*ডি-রেজিস্ট্রেশন|ডি-রেজিস্ট্রেশন'
-    r'|সম্পদ পাচার|ভালোবাসা খুঁজে'
-    # Ringtone/Goongoon/entertainment SMS
-    r'|goongoon|গুনগুন|ringtone.*set|\.sms\.|৳১৪/সপ্তাহ'
-    r'|গানটি আপনার.*সেট|হিসেবে সেট কর'
-    # Operator pack renewal/failure
-    r'|পর্যাপ্ত ব্যালেন্সের অভাবে|রিনিউয়ের জন্য রিচার্জ'
-    r'|treat legend|treat pro|treat master|treat basic'
-    r'|AT_\d+Tk_|USSD_Bundle|অটো-রিনিউয়াল'
-    # Political/social forwards
-    r'|গণভোটে হ্যাঁ|নবী মোর পরশ',
-    re.I
-)
-
-BANK_BODY_SAFE_RE = re.compile(
-    r'islami\s*bank|ibbl|brac\s*bank|trust\s*bank|sonali\s*bank|dutch.bangla|dbbl'
-    r'|bkash|nagad|rocket|upay|a/c\s*#|a/c\s*no|account\s*no'
-    r'|has been (credited|debited|deposited|transferred|withdrawn)'
-    r'|balance\s*(tk|bdt)|trxid|transaction\s*id',
-    re.I
-)
+# OTP / verification — সব filter হবে
+OTP_BODY_RE = re.compile(
+    r'(?:your\s+)?otp\s+(?:is|for)|one.time.(?:password|key|code|pin)[\s:]'
+    r'|verification\s+code\s+(?:is|for)'
+    r'|do\s+not\s+share\s+(?:this|your|otp)'
+    r'|(?:your\s+)?code\s+is\s*:\s*\d'
+    r'|is\s+your\s+otp\b'
+    r'|as\s+(?:one.time|otp)[\s:]'
+    r'|use\s+the\s+(?:number|code|pin|key)\s*:\s*\d'
+    r'|authentication\s+code\s+(?:is|for)'
+    r'|login\s+otp\b'
+    r'|ibas.*use.*(?:number|code|key)\s*:\s*\d'
+    r'|please\s+use\s+the\s+(?:number|code|key)\s*:\s*\d',
+    re.I)
 
 def is_filtered(sender, body):
     s  = str(sender).strip()
     st = stype(s)
+    # OTP/key মেসেজ সব বাদ — sender নির্বিশেষে
+    if OTP_BODY_RE.search(body): return True
     if st in ("mfs","bank","service","personal"):
-        if SKIP_BODY_RE.search(body): return True
-        if MISSED_RE.search(body): return True
-        # Personal BD নম্বর থেকে operator-style bulk SMS ফিল্টার
-        # কিন্তু Bank/MFS মেসেজ হলে filter করবে না
-        if st == "personal":
-            # operator নাম আগে থাকলে bank keyword থাকলেও filter
-            if OPERATOR_NAME_IN_BODY_RE.search(body[:30]): return True
-            if BANK_BODY_SAFE_RE.search(body): return False
-            if OPERATOR_BODY_RE.search(body): return True
-            if OPERATOR_NAME_IN_BODY_RE.search(body): return True
-        return False
-    if SC_RE.match(s): return True
+        return bool(SKIP_BODY_RE.search(body)) or bool(MISSED_RE.search(body))
+    # Short-code filter — কিন্তু bank shortcodes বাদ দেওয়া যাবে না
+    if SC_RE.match(s) and s not in BANK_SHORTCODES: return True
     sl = s.lower()
     return any(f in sl for f in OP_KW)
 
 # ── Multi-part merge ────────────────────────────────────────
 def to_dt(d):
     if isinstance(d, datetime): return d
-    try: return datetime.strptime(str(d)[:19],'%Y-%m-%d %H:%M:%S')
-    except: return datetime.min
+    s = str(d).strip()
+    # Format: 20260210121148 (YYYYMMDDHHmmss) — GP operator format
+    if re.match(r'^\d{14}$', s):
+        try: return datetime.strptime(s, '%Y%m%d%H%M%S')
+        except: pass
+    # Format: 20260210 (YYYYMMDD only)
+    if re.match(r'^\d{8}$', s):
+        try: return datetime.strptime(s, '%Y%m%d')
+        except: pass
+    # Standard formats
+    for fmt in ('%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S','%d/%m/%Y %H:%M'):
+        try: return datetime.strptime(s[:19], fmt)
+        except: pass
+    return datetime.min
 
 def merge(sms_list):
     """শুধু ব্যক্তিগত BD নম্বরের ভাঙা SMS জোড়া লাগায়।
-    Bank / MFS / Service SMS কখনো merge হবে না।
-    একই direction (SMSMT/SMSMO) না হলে merge হবে না।"""
+    Bank / MFS / Service SMS কখনো merge হবে না।"""
     items = sorted(sms_list, key=lambda x: to_dt(x["date"]))
     out, i = [], 0
     while i < len(items):
         cur  = dict(items[i])
         st   = stype(cur["sender"])
+        # Bank/MFS/Service/Other — merge নয়, সরাসরি রাখো
         if st != "personal":
             cur["parts"] = 1
             out.append(cur)
             i += 1
             continue
+        # Personal BD নম্বর — ২ মিনিটের মধ্যে একই sender হলে জোড়া
         dt0  = to_dt(cur["date"])
         sl0  = cur["sender"].strip().lower()
-        dir0 = cur.get("direction","")
         body = cur["body"]
         j = i + 1
         while j < len(items):
             nx = items[j]
             if (stype(nx["sender"]) == "personal" and
                     nx["sender"].strip().lower() == sl0 and
-                    nx.get("direction","") == dir0 and
                     abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 120):
                 body += "\n" + nx["body"]
                 j += 1
@@ -259,11 +164,22 @@ TXN_P = [
     r'[Tt]xn\s+(?:of\s+)?[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Pp]urchase\s+(?:BDT|INR|USD|\$)\s*([\d,]+\.?\d*)',
     r'[Dd]ebited\s+for.*?(?:BDT|[Tt][Kk])\.?\s*([\d,]+\.?\d*)',
+    # DBBL / 16216 pattern: "debited (ATM Cash Withdrawal) by Tk20,000.00"
+    r'debited\s+\(.*?\)\s+by\s+Tk([\d,]+\.?\d*)',
+    r'credited\s+\(.*?\)\s+by\s+Tk([\d,]+\.?\d*)',
+    # Sonali Bank: "for BDT 7,488.00"
+    r'for\s+BDT\s+([\d,]+\.?\d*)',
+    # IBBL: "Withdrawn 5000.00 BDT" / "5000.00 BDT"
+    r'(?:Withdrawn|Deposited)\s+([\d,]+\.?\d*)\s+BDT',
     r'[Pp]aid[:\s]*([\d,]+)',
 ]
 
 def get_amount(text):
-    c = re.sub(r'(?:[Aa]vl?\.?\s+)?[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*[\d,]+\.?\d*','',text)
+    # Balance / C/B / Fee বাদ দিই
+    c = re.sub(r'C/B\s+Tk[\d,]+\.?\d*','',text)
+    c = re.sub(r'Avl\s+Bal[:\s]+[\d,]+\.?\d*','',c)
+    c = re.sub(r'A/C\s+Bal\s+BDT\s+[\d,.]+','',c)
+    c = re.sub(r'(?:[Aa]vl?\.?\s+)?[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*[\d,]+\.?\d*','',c)
     c = re.sub(r'[Ff]ee[:\s]+[Tt][Kk]?\.?\s*[\d,]+\.?\d*','',c)
     vals = []
     for p in TXN_P:
@@ -327,7 +243,7 @@ SHOPPING_RE = re.compile(
     r'|walton|কিস্তি|installment|barcode.*নিবন্ধন'
     r'|desco|dpdc|wasa|titas\s+gas|বিদ্যুৎ\s+বিল', re.I)
 
-OTP_RE = re.compile(r'\botp\b|one\s+time\s+password|verification\s+code|do\s+not\s+share', re.I)
+OTP_RE = OTP_BODY_RE  # alias — same regex
 LOW_BAL_RE = re.compile(r'your\s+balance\s+is\s+(very\s+low|finished)', re.I)
 
 # ── একটি SMS বিশ্লেষণ ──────────────────────────────────────
@@ -412,22 +328,29 @@ def analyze_one(sender, body, date, direction=""):
 # ── একাউন্ট তথ্য ───────────────────────────────────────────
 def get_acct(sender, body, amt):
     sl = str(sender).lower()
+    s  = str(sender).strip()
     bl = body.lower()
     info = {"service":"","trx_id":"","direction":"","other_number":"","balance":0,"amount":amt}
 
-    # Sender থেকে service detect
-    if   "bkash"    in sl: info["service"]="bKash"
-    elif "nagad"    in sl: info["service"]="Nagad"
-    elif "rocket"   in sl or "dutch" in sl: info["service"]="Rocket"
-    elif "upay"     in sl: info["service"]="Upay"
-    elif "ibbl"     in sl or "islami" in sl: info["service"]="Islami Bank"
-    elif "trustbank" in sl or "trust bank" in sl: info["service"]="Trust Bank"
-    elif "trustcard" in sl: info["service"]="Trust Card"
-    elif "sonali"   in sl: info["service"]="Sonali Bank"
-    elif "brac"     in sl: info["service"]="BRAC Bank"
-    elif "metlife"  in sl: info["service"]="MetLife"
+    # Short-code bank senders
+    if s == "16216": info["service"] = "Dutch-Bangla Bank (DBBL)"
+    elif s == "16219": info["service"] = "Mutual Trust Bank"
 
-    # Sender থেকে না পেলে Body থেকে detect করো
+    # Sender keyword detect
+    if not info["service"]:
+        if   "bkash"    in sl: info["service"]="bKash"
+        elif "nagad"    in sl: info["service"]="Nagad"
+        elif "rocket"   in sl: info["service"]="Rocket"
+        elif "dutch-bangla" in sl or "dbbl" in sl: info["service"]="Dutch-Bangla Bank (DBBL)"
+        elif "upay"     in sl: info["service"]="Upay"
+        elif "ibbl"     in sl or "islami" in sl: info["service"]="Islami Bank"
+        elif "trustbank" in sl or "trust bank" in sl: info["service"]="Trust Bank"
+        elif "trustcard" in sl: info["service"]="Trust Card"
+        elif "sonali"   in sl: info["service"]="Sonali Bank"
+        elif "brac"     in sl: info["service"]="BRAC Bank"
+        elif "metlife"  in sl: info["service"]="MetLife"
+
+    # Body fallback
     if not info["service"]:
         if "islami bank" in bl or re.search(r'\bibbl\b',bl): info["service"]="Islami Bank"
         elif "brac bank" in bl:     info["service"]="BRAC Bank"
@@ -435,21 +358,34 @@ def get_acct(sender, body, amt):
         elif "sonali bank" in bl:   info["service"]="Sonali Bank"
         elif re.search(r'\bbkash\b',bl): info["service"]="bKash"
         elif re.search(r'\bnagad\b',bl): info["service"]="Nagad"
-        elif "dutch-bangla" in bl or re.search(r'\bdbbl\b',bl): info["service"]="Rocket"
+        elif "dutch-bangla" in bl or re.search(r'\bdbbl\b',bl) or "nexuspay" in bl:
+            info["service"]="Dutch-Bangla Bank (DBBL)"
         elif "mutual trust" in bl:  info["service"]="Mutual Trust Bank"
-        else: info["service"]=str(sender).strip()
+        else: info["service"]=s
 
     trx = re.search(r'(?:[Tt]rx|[Tt]xn)\s*[Ii][Dd]?[:\s]+([A-Z0-9]{8,})', body)
     if trx: info["trx_id"]=trx.group(1)
     nums = re.findall(r'\b(01[3-9]\d{8})\b', body)
     if nums: info["other_number"]=nums[0]
-    bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
+
+    # Balance — C/B pattern (DBBL), Avl Bal, Balance
+    bal = re.search(r'C/B\s+Tk([\d,]+\.?\d*)', body)
+    if not bal: bal = re.search(r'Avl\s+Bal[:\s]+([\d,]+\.?\d*)', body)
+    if not bal: bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
+    if not bal: bal = re.search(r'A/C\s+Bal\s+BDT\s+([\d,.]+)', body)
     if bal:
         try: info["balance"]=float(bal.group(1).replace(',',''))
         except: pass
-    bl = body.lower()
-    if any(w in bl for w in ["received","cash in","deposit","credit","salary"]): info["direction"]="গ্রহণ"
-    elif any(w in bl for w in ["sent","cash out","withdrawn","withdraw","debit","purchase","transfer"]): info["direction"]="পাঠানো"
+
+    bl2 = body.lower()
+    # Credit = Received (গ্রহণ), Debit = Sent/Withdrawn (প্রদান/উত্তোলন)
+    # Priority: explicit credit/debit keywords first
+    if re.search(r'\bcredited\b|\breceived\b|\bcash\s*in\b|\bdeposit(?:ed)?\b|\bsalary\b|\bfund\s+transfer.*credit', bl2):
+        info["direction"] = "Received"
+    elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b|\bcash\s*out\b|\bpurchase\b|\bpos\b|\batm\b|\btransfer.*debit', bl2):
+        info["direction"] = "Sent"
+    elif re.search(r'\bsent\b', bl2):
+        info["direction"] = "Sent"
     return info
 
 # ── Data load ──────────────────────────────────────────────
@@ -464,30 +400,25 @@ def load_xlsx(path):
             for i,h in enumerate(hdr):
                 if n in h: return i
         return None
-    ai=ci(['aparty']); bi=ci(['bparty']); si=ci(['sender'])
-    mi=ci(['message content','message','body']); ti=ci(['start','date','time'])
-    di=ci(['direction'])  # SMSMT / SMSMO / MTSMS
+    # Support both "StartTime"/"Start" and "A Party"/"AParty"/"BParty"/"B Party"
+    ti = ci(['starttime','start','date','time'])
+    ai = ci(['a party','aparty','sender_a'])
+    bi = ci(['b party','bparty','sender','sender_b'])
+    si = ci(['sender'])
+    mi = ci(['message content','message','body','msg'])
+    di = ci(['direction'])
     out=[]
-    import unicodedata
-    def norm(s): return unicodedata.normalize('NFC', str(s).strip()) if s else ""
     for r in rows[1:]:
-        def g(i): return norm(r[i]) if i is not None and i<len(r) and r[i] else ""
+        def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] else ""
         aparty    = g(ai)
-        bparty    = g(bi) if bi is not None else ""
+        sender    = g(bi) if bi is not None else (g(ai) if ai is not None else g(si))
         body      = g(mi)
-        date      = r[ti] if ti is not None and ti<len(r) else ""
+        raw_date  = r[ti] if ti is not None and ti<len(r) else ""
+        # Convert to datetime for consistent handling
+        date      = to_dt(raw_date) if raw_date else ""
         direction = g(di).upper() if di is not None else ""
-        # Normalize direction
         if direction in ("SMSMT","MTSMS"): direction = "SMSMT"
         elif direction in ("SMSMO","MOSMS"): direction = "SMSMO"
-
-        # ── CORRECT LOGIC ──
-        # এই ফাইল format এ:
-        # SMSMT: AParty = subscriber, BParty = actual sender (IBBL, ComboPack, bKash...)
-        # SMSMO: AParty = subscriber, BParty = recipient
-        # সবসময় BParty = actual sender/recipient
-        sender = bparty if bparty else aparty
-
         if sender and body:
             out.append({"sender":sender,"body":body,"date":date,
                         "aparty":aparty,"direction":direction})
@@ -524,74 +455,39 @@ MONTH_BN = {"01":"জানুয়ারি","02":"ফেব্রুয়া
             "10":"অক্টোবর","11":"নভেম্বর","12":"ডিসেম্বর"}
 
 def build_bank_summary(sms_list):
-    """প্রতিটি ব্যাংক/MFS-এর সম্পূর্ণ লেনদেন সামারি — ১ টাকা থেকে সর্বোচ্চ"""
+    """প্রতিটি ব্যাংক/MFS-এর লেনদেন সামারি তৈরি"""
     from collections import defaultdict
     summ = defaultdict(lambda:{
-        "service":"","txn_count":0,"recv_count":0,"send_count":0,
-        "total_in":0.0,"total_out":0.0,
-        "last_balance":0.0,"max_txn":0.0,"numbers":set()
+        "service":"","txn_count":0,"total_in":0.0,"total_out":0.0,
+        "last_balance":0.0,"last_balance_date":"","max_txn":0.0,"numbers":set()
     })
     SVC_COL = {
         "bKash":"#e11d48","Nagad":"#ea580c","Rocket":"#7c3aed","Upay":"#16a34a",
         "Islami Bank":"#1d4ed8","Trust Bank":"#0369a1","Trust Card":"#7c3aed",
         "Sonali Bank":"#047857","BRAC Bank":"#b45309","MetLife":"#0284c7",
+        "Dutch-Bangla Bank (DBBL)":"#6d28d9","Mutual Trust Bank":"#0891b2",
     }
-
-    # Amount detection — প্রথম amount = transaction, শেষটা সাধারণত balance
-    # "Balance TK X" অংশ বাদ দিয়ে প্রথম amount নাও
-    BAL_STRIP_RE = re.compile(r'balance\s*(tk|taka|bdt|৳)[^.]*', re.I)
-    TXN_AMT_RE   = re.compile(r'(?:tk|taka|bdt|৳)\s*([0-9,]+(?:\.[0-9]{1,2})?)', re.I)
-
-    def get_txn_amount(body):
-        """Balance বাদ দিয়ে প্রথম transaction amount নাও"""
-        clean = BAL_STRIP_RE.sub('', body)
-        m = TXN_AMT_RE.search(clean)
-        if m:
-            try: return float(m.group(1).replace(',',''))
-            except: pass
-        return 0.0
-
-    RECV_RE = re.compile(
-        r'credited|deposited|received|cash\s+in|add\s+money|has been received'
-        r'|payment received|you have received|recharged|money received', re.I)
-    SEND_RE = re.compile(
-        r'debited|withdrawn|deducted|send\s+money|cash\s+out'
-        r'|transferred|has been sent|you sent'
-        r'|payment of tk|payment is successful|payment to'
-        r'|loan repayment|bill pay|topup|is successful', re.I)
-
     for s in sms_list:
-        ai = s.get("acct", {})
+        ai = s.get("acct",{})
         if not ai or not ai.get("service"): continue
-        svc = ai["service"]
-        d = summ[svc]
+        svc = ai["service"]; d = summ[svc]
         d["service"] = svc
 
-        # ১ টাকা থেকে সব amount
-        body = s.get("body","")
-        amt = get_txn_amount(body)
-
-        if amt > 0:
+        if s["tier"]:
             d["txn_count"] += 1
-            if RECV_RE.search(body):
-                d["total_in"]  += amt
-                d["recv_count"] += 1
-            elif SEND_RE.search(body):
-                d["total_out"] += amt
-                d["send_count"] += 1
-            else:
-                # direction থেকে বোঝার চেষ্টা
-                acct_dir = ai.get("direction","")
-                if "গ্রহণ" in acct_dir or "in" in acct_dir.lower():
-                    d["total_in"]  += amt
-                    d["recv_count"] += 1
-                else:
-                    d["total_out"] += amt
-                    d["send_count"] += 1
+            amt = ai.get("amount",0) or 0
+            if "Received" in (ai.get("direction","") or ""): d["total_in"]  += amt
+            else:                                             d["total_out"] += amt
             if amt > d["max_txn"]: d["max_txn"] = amt
 
-        if ai.get("balance") and ai["balance"] > 0:
-            d["last_balance"] = ai["balance"]
+        # last_balance — তারিখ অনুযায়ী সর্বশেষ balance রাখো
+        bal = ai.get("balance",0) or 0
+        if bal > 0:
+            sms_date = str(s.get("date",""))
+            if sms_date > d["last_balance_date"]:
+                d["last_balance"] = bal
+                d["last_balance_date"] = sms_date
+
         if ai.get("other_number"):
             d["numbers"].add(ai["other_number"])
 
@@ -602,14 +498,13 @@ def build_bank_summary(sms_list):
     return result
 
 
-def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
+def generate_html(sms_list, stats, out_path, tn=""):
     now       = datetime.now().strftime("%d %B %Y, %I:%M %p")
     months    = sorted({s["month"] for s in sms_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in sms_list)
     tier_cnt  = Counter(s["tier"] for s in sms_list)
     cat_cnt   = Counter(c for s in sms_list for c in s["categories"])
-    # Summary তে সব financial SMS (১ টাকা থেকে), card এ শুধু ১০K+
-    bank_summ = build_bank_summary(all_financial if all_financial else sms_list)
+    bank_summ = build_bank_summary(sms_list)
     smsmt_count = sum(1 for s in sms_list if s.get("direction") == "SMSMT")
     smsmo_count = sum(1 for s in sms_list if s.get("direction") == "SMSMO")
     MONTH_EN = {"01":"January","02":"February","03":"March","04":"April","05":"May",
@@ -646,6 +541,8 @@ def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
                  if s["amount"]>=TIER_SMALL else "")
         tier_badge=(f'<span class="rbadge" style="background:{bdr}">{TIER_EN_LBL.get(t,"")}</span>' if t else "")
         dir_badge=""
+        if direction=="SMSMT": dir_badge='<span class="dir-in">● IN</span>'
+        elif direction=="SMSMO": dir_badge='<span class="dir-out">● OUT</span>'
         acct_mini=""
         if ai and ai.get("service"):
             pts=[]
@@ -684,34 +581,17 @@ def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
                  f'<div class="sbar-w"><div class="sbar" style="width:{pct}%;background:{col}"></div></div>'
                  f'<span class="scnt">{cnt}</span></div>')
     bank_sb=""
-    grand_in  = sum(d["total_in"]  for d in bank_summ.values())
-    grand_out = sum(d["total_out"] for d in bank_summ.values())
-    grand_txn = sum(d["txn_count"] for d in bank_summ.values())
-    if bank_summ:
-        bank_sb += f'''<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 14px;margin-bottom:10px">
-          <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:8px;letter-spacing:.5px">সর্বমোট লেনদেন ({grand_txn} টি)</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="background:#fff;border-radius:8px;padding:8px;text-align:center;border:1px solid #bbf7d0">
-              <div style="font-size:10px;color:#15803d;font-weight:600;margin-bottom:3px">⬇ মোট গ্রহণ</div>
-              <div style="font-size:13px;font-weight:800;color:#15803d">৳{grand_in:,.0f}</div>
-            </div>
-            <div style="background:#fff;border-radius:8px;padding:8px;text-align:center;border:1px solid #fecaca">
-              <div style="font-size:10px;color:#dc2626;font-weight:600;margin-bottom:3px">⬆ মোট প্রদান</div>
-              <div style="font-size:13px;font-weight:800;color:#dc2626">৳{grand_out:,.0f}</div>
-            </div>
-          </div>
-        </div>'''
     for svc,d in bank_summ.items():
         col=d["color"]; nums="".join(f'<div class="acct-num">📱 {n}</div>' for n in d["numbers"])
         bank_sb+=f'''<div class="acct-card" style="border-left:3px solid {col}">
           <div class="acct-svc" style="color:{col}">💳 {esc(svc)}</div>
           <div class="acct-grid4">
-            <div class="ag-c"><div class="ag-v">{d["txn_count"]}</div><div class="ag-l">লেনদেন</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#16a34a;font-size:11px">৳{d["total_in"]:,.0f}</div><div class="ag-l">⬇ গ্রহণ ({d["recv_count"]})</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">⬆ প্রদান ({d["send_count"]})</div></div>
-            <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">সর্বোচ্চ</div></div>
+            <div class="ag-c"><div class="ag-v">{d["txn_count"]}</div><div class="ag-l">Transactions</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#16a34a;font-size:11px">৳{d["total_in"]:,.0f}</div><div class="ag-l">Received</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">Sent</div></div>
+            <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">Highest</div></div>
           </div>
-          {f'<div class="ag-bal">💰 শেষ ব্যালেন্স: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""}
+          {f'<div class="ag-bal">💰 Last Balance: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""}
           {nums}</div>'''
     if not bank_sb: bank_sb='<div style="color:#9ca3af;font-size:11px;padding:4px 0">No MFS/Bank data</div>'
     def fb(lbl,js,col=None):
@@ -721,6 +601,8 @@ def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
     fbtns+=fb(f'🔴 High ({tier_cnt.get("high",0)})',"fTier(this,'high')","#991b1b")
     fbtns+=fb(f'🟠 Medium ({tier_cnt.get("med",0)})',"fTier(this,'med')","#dc2626")
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
+    if smsmt_count: pass  # SMSMT shown in summary only, not as filter button
+    if smsmo_count: pass  # SMSMO shown in summary only, not as filter button
     for ck in ["identity","love_family","travel","courier","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
@@ -734,9 +616,10 @@ def generate_html(sms_list, stats, out_path, tn="", all_financial=None):
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SMS Intelligence Report — {esc(tn) if tn else "All Numbers"}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Bengali:wght@400;600;700&family=JetBrains+Mono:wght@500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px}}
+body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size:14px}}
 .topbar{{background:linear-gradient(135deg,#1a0505 0%,#7b0d0d 45%,#c0392b 100%);
   padding:0 28px;height:66px;display:flex;align-items:center;justify-content:space-between;
   position:sticky;top:0;z-index:200;box-shadow:0 2px 12px rgba(0,0,0,.2)}}
@@ -749,10 +632,10 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemF
 .cfbadge{{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
   font-size:9px;font-weight:700;letter-spacing:2px;padding:3px 10px;border-radius:20px}}
 .tnbadge{{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
-  font-size:11px;padding:3px 10px;border-radius:20px;font-family:'Courier New',monospace}}
+  font-size:11px;padding:3px 10px;border-radius:20px;font-family:'JetBrains Mono',monospace}}
 .dl-top{{display:flex;align-items:center;gap:6px;background:#fff;color:#c0392b;
   font-size:12px;font-weight:700;padding:7px 16px;border-radius:20px;cursor:pointer;
-  border:none;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:all .2s;
+  border:none;font-family:'Outfit',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:all .2s;
   text-decoration:none}}
 .dl-top:hover{{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.2)}}
 .summary-sheet{{background:linear-gradient(135deg,#0f172a,#1e293b);
@@ -760,10 +643,10 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemF
 .ss-header{{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:20px;flex-wrap:wrap}}
 .ss-title{{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:4px}}
 .ss-sub{{font-size:12px;color:rgba(255,255,255,.5)}}
-.ss-meta{{text-align:right;font-size:11px;color:rgba(255,255,255,.4);font-family:'Courier New',monospace;line-height:1.8}}
+.ss-meta{{text-align:right;font-size:11px;color:rgba(255,255,255,.4);font-family:'JetBrains Mono',monospace;line-height:1.8}}
 .ss-grid{{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}}
 .ss-box{{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px;text-align:center}}
-.ss-num{{font-size:26px;font-weight:800;font-family:'Courier New',monospace;line-height:1;margin-bottom:3px}}
+.ss-num{{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:3px}}
 .ss-lbl{{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px}}
 .ss-box.red{{border-color:rgba(192,57,43,.5);background:rgba(192,57,43,.15)}}
 .ss-box.grn{{border-color:rgba(22,163,74,.5);background:rgba(22,163,74,.1)}}
@@ -778,7 +661,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemF
 .sgrid{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}}
 .sc2{{background:#f8fafc;border:1px solid #e8eaed;border-radius:8px;padding:10px;text-align:center}}
 .sc2.full{{grid-column:1/-1}}
-.sc2-num{{font-size:22px;font-weight:700;font-family:'Courier New',monospace;line-height:1;margin-bottom:2px}}
+.sc2-num{{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:2px}}
 .sc2-lbl{{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.3px}}
 .tinfo{{background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:8px 10px;font-size:11px;color:#78350f;line-height:1.7;margin-bottom:8px}}
 .tinfo b{{color:#92400e}}
@@ -787,16 +670,16 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemF
 .slbl{{font-size:10px;color:#475569;flex:1;line-height:1.4}}
 .sbar-w{{width:48px;height:3px;background:#f1f5f9;border-radius:2px;overflow:hidden}}
 .sbar{{height:100%;border-radius:2px}}
-.scnt{{font-size:10px;color:#9ca3af;font-family:'Courier New',monospace;min-width:18px;text-align:right}}
+.scnt{{font-size:10px;color:#9ca3af;font-family:'JetBrains Mono',monospace;min-width:18px;text-align:right}}
 .acct-card{{background:#f8fafc;border:1px solid #e8eaed;border-radius:8px;padding:10px 11px;margin-bottom:7px}}
 .acct-svc{{font-size:13px;font-weight:700;margin-bottom:7px}}
 .acct-grid4{{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}}
 .ag-c{{background:#fff;border:1px solid #e8eaed;border-radius:5px;padding:5px 4px;text-align:center}}
-.ag-v{{font-size:13px;font-weight:700;font-family:'Courier New',monospace;line-height:1}}
+.ag-v{{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1}}
 .ag-l{{font-size:9px;color:#9ca3af;margin-top:2px}}
-.ag-bal{{font-size:10px;color:#16a34a;font-family:'Courier New',monospace;
+.ag-bal{{font-size:10px;color:#16a34a;font-family:'JetBrains Mono',monospace;
   background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;padding:4px 7px;margin-bottom:4px}}
-.acct-num{{font-size:10px;color:#2563eb;font-family:'Courier New',monospace;padding:2px 0;border-bottom:1px solid #f1f5f9}}
+.acct-num{{font-size:10px;color:#2563eb;font-family:'JetBrains Mono',monospace;padding:2px 0;border-bottom:1px solid #f1f5f9}}
 .acct-num:last-child{{border-bottom:none}}
 .fbar{{background:#fff;border-bottom:1px solid #e8eaed;padding:10px 22px;
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04)}}
@@ -820,24 +703,24 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemF
 .sc-head{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;gap:10px}}
 .sc-left{{display:flex;align-items:center;gap:9px;min-width:0}}
 .snum{{background:#f1f5f9;border:1px solid #e2e8f0;color:#9ca3af;
-  font-family:'Courier New',monospace;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0}}
-.snm{{font-family:'Courier New',monospace;font-size:13px;color:#2563eb;font-weight:600;
+  font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0}}
+.snm{{font-family:'JetBrains Mono',monospace;font-size:13px;color:#2563eb;font-weight:600;
   display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
 .sdate{{font-size:10px;color:#9ca3af;margin-top:2px}}
 .sc-right{{display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}}
 .rbadge{{font-size:9px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;letter-spacing:.5px}}
-.amt-tag{{color:#fff;font-size:11px;font-family:'Courier New',monospace;padding:3px 10px;border-radius:20px;font-weight:700}}
+.amt-tag{{color:#fff;font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 10px;border-radius:20px;font-weight:700}}
 .merged-tag{{background:#dbeafe;color:#1e40af;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:600;margin-left:5px}}
 .dir-in{{background:#dcfce7;color:#15803d;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .dir-out{{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .acct-mini{{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;
   padding:6px 10px;margin-bottom:8px;font-size:11px;color:#0369a1;
-  font-family:'Courier New',monospace;line-height:1.7}}
+  font-family:'JetBrains Mono',monospace;line-height:1.7}}
 .acct-mini code{{background:#dbeafe;color:#1e40af;padding:1px 4px;border-radius:3px}}
-.sbody{{font-size:13px;line-height:1.9;color:#374151;font-family:inherit;
+.sbody{{font-size:13px;line-height:1.9;color:#374151;font-family:'Noto Serif Bengali',serif;
   padding:10px 13px;border-radius:7px;border:1px solid #e2e8f0;white-space:pre-wrap;word-break:break-word}}
 .sbody mark{{background:#fef08a;color:#713f12;padding:1px 4px;border-radius:3px;
-  font-weight:700;font-family:'Courier New',monospace}}
+  font-weight:700;font-family:'JetBrains Mono',monospace}}
 .sc-foot{{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}}
 .ctag{{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:500}}
 .no-result{{text-align:center;padding:60px;color:#9ca3af}}
@@ -965,59 +848,11 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     merged_ = merge(raw)
     filtered_cnt = 0
-
-    # ── AUTO-BLACKLIST ──────────────────────────────────────────
-    # যে personal নম্বর থেকে ≥80% operator মেসেজ আসে, সেই নম্বর blacklist
-    # (courier/bank/shopping মেসেজ exempt)
-    SAFE_BODY_RE = re.compile(
-        # Courier / Shopping
-        r'paperfly|steadfast|pathao|redx|sundarban|courier|parcel|delivery'
-        r'|bayerp|bay.*vn:|thanks for choosing'
-        # Bank / MFS
-        r'|bkash|nagad|ibbl|brac.*bank|islami.*bank|credited|debited'
-        # ব্যক্তিগত গুরুত্বপূর্ণ মেসেজ — সবসময় রাখতে হবে
-        r'|বিবাহ.*বার্ষ|বিবাহ.*বাষ|বিবাহ.*বাৎসর|anniversary'
-        r'|জন্মদিন|শুভ জন্মদিন|happy birthday|জন্মদিনের শুভেচ্ছা'
-        r'|ভর্তি.*স্কুল|স্কুল.*ভর্তি|ভর্তি.*কলেজ|ভর্তি.*মাদ্রাসা'
-        r'|admission.*school|school.*admission'
-        r'|বেতন.*পেয়েছি|বেতন.*পাঠিয়েছি|বেতন.*দিয়েছি|বেতন.*দাও'
-        r'|salary.*received|salary.*sent|মাসের বেতন|বেতন প্রদান'
-        r'|টাকা পাঠাও|টাকা পাঠিয়েছি|টাকা পেয়েছি|টাকা দরকার'
-        r'|অসুস্থ|হাসপাতাল|ডাক্তার.*দেখাও|ডাক্তার.*দেখাতে'
-        r'|বিয়ে.*তারিখ|বিয়ে.*অনুষ্ঠান|বিয়ের.*দাওয়াত'
-        r'|আসতে পারবে|আসতে পারবেন|কখন আসবে|কোথায় আছ',
-        re.I
-    )
-    from collections import Counter as _Counter
-    sender_op_count = _Counter()
-    sender_total = _Counter()
-    for item in merged_:
-        s = item['sender']
-        if stype(s) != 'personal': continue
-        sender_total[s] += 1
-        if is_filtered(s, item['body']):
-            sender_op_count[s] += 1
-
-    operator_senders = set()
-    for s, total in sender_total.items():
-        if total >= 5 and sender_op_count[s] / total >= 0.80:
-            operator_senders.add(s)
-    # ────────────────────────────────────────────────────────────
-
-    all_financial = []
     results = []
     seen = set()
 
-    SMALL_FIN_RE = re.compile(
-        r'(?:tk|taka|bdt|৳)\s*[0-9].*(?:credited|debited|received|payment|cash\s*in|cash\s*out'
-        r'|withdrawn|transferred|successful|send\s*money|loan repayment)',
-        re.I | re.S)
-
     for item in merged_:
         if not item["body"].strip(): continue
-        # Auto-blacklisted sender — safe body (courier/bank) ছাড়া সব বাদ
-        if item["sender"] in operator_senders and not SAFE_BODY_RE.search(item["body"]):
-            filtered_cnt+=1; continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
         body_key  = item["body"].strip()
         dt_str    = str(item["date"])[:16]
@@ -1029,29 +864,6 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         if res:
             res["parts"] = item.get("parts",1)
             results.append(res)
-            if res.get("acct") and res["acct"].get("service"):
-                all_financial.append(res)
-        else:
-            # analyze_one None দিলেও financial SMS হলে summary তে রাখো
-            st = stype(item["sender"])
-            body_st = detect_service_from_body(item["body"])
-            if st in ("mfs","bank") or body_st in ("mfs","bank"):
-                amt = get_amount(item["body"])
-                if amt > 0 and SMALL_FIN_RE.search(item["body"]):
-                    from datetime import datetime as _dt
-                    def to_month(d):
-                        if isinstance(d, _dt): return d.strftime('%Y-%m')
-                        try: return _dt.strptime(str(d)[:10],'%Y-%m-%d').strftime('%Y-%m')
-                        except: return ""
-                    acct = get_acct(item["sender"], item["body"], amt)
-                    if acct.get("service"):
-                        all_financial.append({
-                            "sender": item["sender"], "body": item["body"],
-                            "date": str(item["date"]), "month": to_month(item["date"]),
-                            "sender_type": st, "categories": [],
-                            "amount": amt, "tier": "", "acct": acct,
-                            "direction": item.get("direction","")
-                        })
 
     stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt}
 
@@ -1063,7 +875,16 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         tn = m.group(1) if m else ""
     if tn.startswith('880') and len(tn)>11: tn='0'+tn[3:]
 
-    generate_html(results, stats, html_out, tn, all_financial)
+    generate_html(results, stats, html_out, tn)
+    tc = Counter(s["tier"] for s in results)
+    return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
+            "filtered":filtered_cnt,"total_shown":len(results),
+            "high":tc.get("high",0),"med":tc.get("med",0),"small":tc.get("small",0)}
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    m = re.search(r'(\d{10,})', base)
+    tn = m.group(1) if m else ""
+    if tn.startswith('880'): tn='0'+tn[3:]
+    generate_html(results, stats, html_out, tn)
     tc = Counter(s["tier"] for s in results)
     return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
             "filtered":filtered_cnt,"total_shown":len(results),
