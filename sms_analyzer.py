@@ -305,14 +305,17 @@ def analyze_one(sender, body, date, direction=""):
     # Personal নম্বর হলেও body-তে bank/MFS থাকলে সেই type অনুযায়ী চলবে
     body_st = detect_service_from_body(body)
     if st == "personal" and body_st in ("bank","mfs"):
-        st = body_st  # override করো
+        st = body_st
 
     # MFS/Bank — OTP ও low balance বাদ
     if st in ("mfs","bank") and not t:
         if OTP_RE.search(body) or LOW_BAL_RE.search(body): return None
+        # Balance notification — sidebar-এর জন্য রাখো
+        acct = get_acct(sender, body, 0)
+        if acct.get("balance",0) > 0:
+            cats.append("bank_info")   # special — sidebar only, card-এ দেখাবে না
 
     if st == "personal":
-        # Priority order — একটাই ক্যাটাগরি নেওয়া হবে
         if ID_RE.search(body):         cats.append("identity")
         elif LOVE_RE.search(body):     cats.append("love_family")
         elif TRAVEL_RE.search(body):   cats.append("travel")
@@ -336,7 +339,6 @@ def analyze_one(sender, body, date, direction=""):
         except: return ""
 
     acct = {}
-    # Bank/MFS body থেকে detect হলে সবসময় acct calculate করো
     if st in ("mfs","bank") or t or body_st:
         acct = get_acct(sender, body, amt)
 
@@ -543,14 +545,13 @@ def build_bank_summary(sms_list, extra_balances=None):
     return result
 
 
-def generate_html(sms_list, stats, out_path, tn="", extra_balances=None):
-    if extra_balances is None: extra_balances = {}
+def generate_html(sms_list, stats, out_path, tn=""):
     now       = datetime.now().strftime("%d %B %Y, %I:%M %p")
     months    = sorted({s["month"] for s in sms_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in sms_list)
     tier_cnt  = Counter(s["tier"] for s in sms_list)
     cat_cnt   = Counter(c for s in sms_list for c in s["categories"])
-    bank_summ = build_bank_summary(sms_list, extra_balances)
+    bank_summ = build_bank_summary(sms_list)
     smsmt_count = sum(1 for s in sms_list if s.get("direction") == "SMSMT")
     smsmo_count = sum(1 for s in sms_list if s.get("direction") == "SMSMO")
     MONTH_EN = {"01":"January","02":"February","03":"March","04":"April","05":"May",
@@ -577,9 +578,12 @@ def generate_html(sms_list, stats, out_path, tn="", extra_balances=None):
                 try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
                 except: pass
         return r
+    # bank_info — sidebar-এর জন্য আছে, card হিসেবে দেখাবে না
+    display_list = [s for s in sms_list if "bank_info" not in s.get("categories",[])]
+
     # Cards
     cards=""
-    for i,s in enumerate(sms_list,1):
+    for i,s in enumerate(display_list,1):
         t=s["tier"] or ""; bdr=TIER_COL.get(t,"#cbd5e1"); bg=TIER_BG.get(t,"#f8fafc")
         ai=s.get("acct",{}); direction=s.get("direction","")
         TIER_EN_LBL={"high":"🔴 High (100K+)","med":"🟠 Medium (50K–100K)","small":"🟡 Small (10K–50K)"}
@@ -621,7 +625,7 @@ def generate_html(sms_list, stats, out_path, tn="", extra_balances=None):
         cnt=cat_cnt.get(ck,0)
         if not cnt: continue
         col=meta["color"]; lbl=CAT_EN.get(ck,meta.get("label",ck))
-        pct=int(cnt/len(sms_list)*100) if sms_list else 0
+        pct=int(cnt/len(display_list)*100) if display_list else 0
         cat_sb+=(f'<div class="stat-row"><span>{meta["icon"]}</span>'
                  f'<span class="slbl">{lbl}</span>'
                  f'<div class="sbar-w"><div class="sbar" style="width:{pct}%;background:{col}"></div></div>'
@@ -646,7 +650,7 @@ def generate_html(sms_list, stats, out_path, tn="", extra_balances=None):
     def fb(lbl,js,col=None):
         st=f' style="border-color:{col}"' if col else ""
         return f'<button class="fbtn"{st} onclick="{js}">{lbl}</button>'
-    fbtns =f'<button class="fbtn active" onclick="fAll(this)">All ({len(sms_list)})</button>'
+    fbtns =f'<button class="fbtn active" onclick="fAll(this)">All ({len(display_list)})</button>'
     fbtns+=fb(f'🔴 High ({tier_cnt.get("high",0)})',"fTier(this,'high')","#991b1b")
     fbtns+=fb(f'🟠 Medium ({tier_cnt.get("med",0)})',"fTier(this,'med')","#dc2626")
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
@@ -806,7 +810,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
   </div>
   <div class="ss-grid">
     <div class="ss-box red" style="grid-column:1/-1">
-      <div class="ss-num" style="color:#f87171;font-size:32px">{len(sms_list)}</div>
+      <div class="ss-num" style="color:#f87171;font-size:32px">{len(display_list)}</div>
       <div class="ss-lbl">Total Identified SMS</div>
     </div>
     <div class="ss-box red"><div class="ss-num" style="color:#fca5a5">{tier_cnt.get("high",0)}</div><div class="ss-lbl">High Value (100K+)</div></div>
@@ -824,7 +828,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
   <div class="tinfo">🔴 <b>100K+</b> → High<br>🟠 <b>50K–100K</b> → Medium<br>🟡 <b>10K–50K</b> → Small</div>
   <div class="stitle">Overview</div>
   <div class="sgrid">
-    <div class="sc2 full"><div class="sc2-num" style="color:#c0392b">{len(sms_list)}</div><div class="sc2-lbl">Total Identified</div></div>
+    <div class="sc2 full"><div class="sc2-num" style="color:#c0392b">{len(display_list)}</div><div class="sc2-lbl">Total Identified</div></div>
     <div class="sc2"><div class="sc2-num" style="color:#991b1b">{tier_cnt.get("high",0)}</div><div class="sc2-lbl">High (100K+)</div></div>
     <div class="sc2"><div class="sc2-num" style="color:#dc2626">{tier_cnt.get("med",0)}</div><div class="sc2-lbl">Medium</div></div>
     <div class="sc2"><div class="sc2-num" style="color:#ea580c">{tier_cnt.get("small",0)}</div><div class="sc2-lbl">Small (10K–50K)</div></div>
@@ -847,7 +851,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
     <input class="sbox" type="text" placeholder="🔍 Search messages..." oninput="fSearch(this.value)">
   </div>
   <div class="content">
-    <div class="rh"><div class="rinfo">Showing: <span id="vc">{len(sms_list)}</span> SMS records</div></div>
+    <div class="rh"><div class="rinfo">Showing: <span id="vc">{len(display_list)}</span> SMS records</div></div>
     <div class="scards" id="cards">{cards}</div>
   </div>
 </div>
@@ -916,24 +920,6 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
 
     stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt}
 
-    # Bank balance tracking — filter হওয়া bank SMS থেকেও balance সংগ্রহ করি
-    # (যেমন MTB balance notification যেটা transaction না হওয়ায় results-এ নেই)
-    extra_balances = {}  # service → {balance, date}
-    for item in merged_:
-        body   = item["body"]
-        sender = item["sender"]
-        st     = stype(sender)
-        if st not in ("bank","mfs") and not detect_service_from_body(body): continue
-        if is_filtered(sender, body): continue
-        amt  = get_amount(body)
-        acct = get_acct(sender, body, amt)
-        svc  = acct.get("service","")
-        bal  = acct.get("balance",0) or 0
-        if svc and bal > 0:
-            sms_date = str(item.get("date",""))
-            if svc not in extra_balances or sms_date > extra_balances[svc]["date"]:
-                extra_balances[svc] = {"balance": bal, "date": sms_date}
-
     # Target number — filename থেকে বা parameter থেকে
     tn = re.sub(r'[^\d]','', target_number) if target_number else ""
     if not tn:
@@ -942,10 +928,11 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         tn = m.group(1) if m else ""
     if tn.startswith('880') and len(tn)>11: tn='0'+tn[3:]
 
-    generate_html(results, stats, html_out, tn, extra_balances=extra_balances)
+    generate_html(results, stats, html_out, tn)
     tc = Counter(s["tier"] for s in results)
+    display_count = sum(1 for s in results if "bank_info" not in s.get("categories",[]))
     return {"target_number":tn,"total_sms":len(raw),"after_merge":len(merged_),
-            "filtered":filtered_cnt,"total_shown":len(results),
+            "filtered":filtered_cnt,"total_shown":display_count,
             "high":tc.get("high",0),"med":tc.get("med",0),"small":tc.get("small",0)}
 
 def main():
