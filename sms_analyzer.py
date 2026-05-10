@@ -131,12 +131,14 @@ def is_filtered(sender, body):
     st = stype(s)
     # Promotional numbers — always filter
     if st == "promo": return True
-    # OTP/key মেসেজ সব বাদ
+    # OTP/key মেসেজ — সব sender-এর জন্য বাদ
     if OTP_BODY_RE.search(body): return True
-    if st in ("mfs","bank","service","personal"):
-        return bool(SKIP_BODY_RE.search(body)) or bool(MISSED_RE.search(body))
-    # Short-code filter — কিন্তু bank shortcodes বাদ দেওয়া যাবে না
+    # Body keywords — সব sender-এর জন্য check করো
+    if SKIP_BODY_RE.search(body): return True
+    if MISSED_RE.search(body): return True
+    # Short-code filter — bank shortcodes ছাড়া
     if SC_RE.match(s) and s not in BANK_SHORTCODES: return True
+    # Operator sender keywords
     sl = s.lower()
     return any(f in sl for f in OP_KW)
 
