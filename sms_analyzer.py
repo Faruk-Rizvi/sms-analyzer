@@ -458,8 +458,10 @@ def get_acct(sender, body, amt):
         info["direction"] = "Received"
     elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b', bl2):
         info["direction"] = "Sent"
-    # Priority 4: transferred to A/C = Sent, deposited from = Received
-    elif re.search(r'transfer(?:red)?\s+to\s+(?:a/c|account)', bl2):
+    # Priority 4: transferred TO account = Received, transferred FROM account = Sent
+    elif re.search(r'transfer(?:red)?\s+to\b', bl2):
+        info["direction"] = "Received"
+    elif re.search(r'transfer(?:red)?\s+from\b', bl2):
         info["direction"] = "Sent"
     elif re.search(r'deposited\s+(?:from|to\s+your)', bl2):
         info["direction"] = "Received"
