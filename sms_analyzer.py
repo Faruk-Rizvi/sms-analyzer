@@ -8,7 +8,7 @@ import openpyxl, re, html as hl, sys, os, csv
 from datetime import datetime
 from collections import Counter
 
-TIER_SMALL = 5_000
+TIER_SMALL = 10_000
 TIER_MED   = 50_000
 TIER_HIGH  = 100_000
 
@@ -79,17 +79,37 @@ OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comebac
          'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert']
 
 SKIP_BODY_RE = re.compile(
-    r"whatsapp\.com|Let's chat on WhatsApp|Let's video call|imo\.onelink|imo-তে"
-    r"|কলটি গ্রহণ করতে পারবেন|Let's have a call|meet\.google\.com"
+    # Messaging apps
+    r"whatsapp\.com|Let's chat on WhatsApp|Let's video call"
+    r"|imo\.onelink|imo-তে|Let's have a call|meet\.google\.com"
     r"|Can't talk now|I'll be there soon|This invite expires"
-    # প্রমোশনাল / লটারি বাংলা keywords
-    r"|পুরস্কার পান|লটারি.বিজয়ী|জেতা সম্ভব|ডেলিভারি ওটিপি"
-    r"|ফ্রি বোনাস পেতে|বোনাসটি অ্যাকাউন্টে জমা হয়েছে"
-    # অপারেটর নাম (হুবহু)
-    r"|\bGrameenphone\b|\bRobi\b|\bAirtel\b|\bBanglalink\b|\bTeletalk\b",
-    re.I)
 
-MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস', re.I)
+    # মিসড কল / কল নোটিফিকেশন
+    r"|কলটি গ্রহণ করতে পারবেন|কল মিস|এখন কলটি গ্রহণ"
+    r"|missed call|miss call|কলটি মিস|মিস করেছেন"
+
+    # অপারেটর নাম
+    r"|Grameenphone|Grameen\s*phone|Robi(?:\s+Axiata)?|Airtel"
+    r"|Banglalink|Teletalk|MyBL|MyRobi|MyAirtel"
+
+    # বাংলা প্রমো keywords
+    r"|পুরস্কার\s*পান|লটারি.বিজয়ী|জেতা\s*সম্ভব"
+    r"|ফ্রি\s*বোনাস\s*পেতে|বোনাসটি\s*অ্যাকাউন্টে\s*জমা"
+    r"|প্রিয়\s*গ্রাহক(?!\s*আপনার\s*(?:পার্সেল|অর্ডার|পণ্য))"  # প্রিয় গ্রাহক but NOT courier ones
+
+    # Delivery OTP — বাদ (কিন্তু tracking রাখো)
+    r"|ডেলিভারি\s*ওটিপি|delivery\s*otp|অর্ডারটির\s*ডেলিভারি\s*ওটিপি"
+
+    # Gambling / bonus / lottery — সব বাদ
+    r"|\bলটারি\b|lottery|বিজয়ী\s*নম্বর"
+    r"|নিবন্ধন.*ফ্রি.*বোনাস|ফ্রি\s*\+.*%.*বোনাস|\d+%\s*বোনাস|বোনাস\s*\d+%"
+    r"|এখনই\s*নিবন্ধন|ক্যাসিনো|casino|জুয়া|\bbet\b"
+
+    # Short URL spam (ln.run, bit.ly etc — courier tracking URL নয়)
+    r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order))",
+    re.I | re.S)
+
+MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন', re.I)
 
 # OTP / verification — সব filter হবে
 OTP_BODY_RE = re.compile(
@@ -561,14 +581,18 @@ def build_bank_summary(sms_list, extra_balances=None):
 
 
 def generate_html(sms_list, stats, out_path, tn=""):
-    now       = datetime.now().strftime("%d %B %Y, %I:%M %p")
-    months    = sorted({s["month"] for s in sms_list if s["month"]})
-    mnt_cnt   = Counter(s["month"] for s in sms_list)
-    tier_cnt  = Counter(s["tier"] for s in sms_list)
-    cat_cnt   = Counter(c for s in sms_list for c in s["categories"])
+    now = datetime.now().strftime("%d %B %Y, %I:%M %p")
+
+    # bank_info — sidebar-এর জন্য, card-এ দেখাবে না
+    display_list = [s for s in sms_list if "bank_info" not in s.get("categories",[])]
+
+    months    = sorted({s["month"] for s in display_list if s["month"]})
+    mnt_cnt   = Counter(s["month"] for s in display_list)
+    tier_cnt  = Counter(s["tier"] for s in display_list)
+    cat_cnt   = Counter(c for s in display_list for c in s["categories"])
     bank_summ = build_bank_summary(sms_list)
-    smsmt_count = sum(1 for s in sms_list if s.get("direction") == "SMSMT")
-    smsmo_count = sum(1 for s in sms_list if s.get("direction") == "SMSMO")
+    smsmt_count = sum(1 for s in display_list if s.get("direction") == "SMSMT")
+    smsmo_count = sum(1 for s in display_list if s.get("direction") == "SMSMO")
     MONTH_EN = {"01":"January","02":"February","03":"March","04":"April","05":"May",
                 "06":"June","07":"July","08":"August","09":"September",
                 "10":"October","11":"November","12":"December"}
@@ -593,9 +617,6 @@ def generate_html(sms_list, stats, out_path, tn=""):
                 try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
                 except: pass
         return r
-    # bank_info — sidebar-এর জন্য আছে, card হিসেবে দেখাবে না
-    display_list = [s for s in sms_list if "bank_info" not in s.get("categories",[])]
-
     # Cards
     cards=""
     for i,s in enumerate(display_list,1):
