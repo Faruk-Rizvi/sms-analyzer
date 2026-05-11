@@ -17,7 +17,7 @@ BD_RE = re.compile(r'^\+?8801[3-9]\d{8}$|^01[3-9]\d{8}$')
 def is_bd(s): return bool(BD_RE.match(str(s).strip()))
 
 # ── Sender type ────────────────────────────────────────────
-MFS_KW    = ['bkash','b-kash','nagad','rocket','dutch-bangla','dbbl','upay','mcash','tap','surecash']
+MFS_KW    = ['bkash','b-kash','nagad','rocket','upay','mcash','tap','surecash']
 BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'trustbank','trust bank','trustcard',
              'sonali','janata bank','agrani bank','rupali bank',
@@ -25,7 +25,8 @@ BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'city bank','citybank','ebl','eastern bank','prime bank',
              'mutual trust','mtb.','mtb ','\bmtb\b',
              'southeast bank','ab bank','ucb','hsbc','standard chartered',
-             'ific','idlc','metlife','dutch-bangla','dbbl','nexuspay','sonali bank']
+             'ific','idlc','metlife','dutch-bangla','dutch bangla','dbbl',
+             'nexuspay','nexus pay','sonali bank']
 
 # Short-code senders that are actually banks (not to be filtered)
 BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}
@@ -105,8 +106,8 @@ SKIP_BODY_RE = re.compile(
     r"|নিবন্ধন.*ফ্রি.*বোনাস|ফ্রি\s*\+.*%.*বোনাস|\d+%\s*বোনাস|বোনাস\s*\d+%"
     r"|এখনই\s*নিবন্ধন|ক্যাসিনো|casino|জুয়া|\bbet\b"
 
-    # Short URL spam (ln.run, bit.ly etc — courier tracking URL নয়)
-    r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order))",
+    # Short URL spam — কিন্তু bank-এর নিজস্ব link বাদ নয়
+    r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order|nexuspay|nexus))",
     re.I | re.S)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন', re.I)
@@ -217,9 +218,12 @@ TXN_P = [
     r'[Tt]xn\s+(?:of\s+)?[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Pp]urchase\s+(?:BDT|INR|USD|\$)\s*([\d,]+\.?\d*)',
     r'[Dd]ebited\s+for.*?(?:BDT|[Tt][Kk])\.?\s*([\d,]+\.?\d*)',
-    # DBBL / 16216 pattern: "debited (ATM Cash Withdrawal) by Tk20,000.00"
-    r'debited\s+\(.*?\)\s+by\s+Tk([\d,]+\.?\d*)',
-    r'credited\s+\(.*?\)\s+by\s+Tk([\d,]+\.?\d*)',
+    # DBBL / 16216 / NexusPay pattern:
+    # "debited (ATM Cash Withdrawal) by Tk20,000.00"
+    # "debited CHARGE FOR AGENT BANKING by Tk100.00"
+    # "credited(Refund of Nexus Card...) by Tk2,399.24"
+    r'debited\s+(?:\(.*?\)|[A-Z\s]+)\s+by\s+Tk-?([\d,]+\.?\d*)',
+    r'credited\s*(?:\(.*?\)|[A-Z\s]+)\s+by\s+Tk([\d,]+\.?\d*)',
     # Sonali Bank: "for BDT 7,488.00"
     r'for\s+BDT\s+([\d,]+\.?\d*)',
     # IBBL: "Withdrawn 5000.00 BDT" / "5000.00 BDT"
