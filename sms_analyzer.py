@@ -347,10 +347,10 @@ def analyze_one(sender, body, date, direction=""):
     # MFS/Bank — OTP ও low balance বাদ
     if st in ("mfs","bank") and not t:
         if OTP_RE.search(body) or LOW_BAL_RE.search(body): return None
-        # Balance notification — sidebar-এর জন্য রাখো
-        acct = get_acct(sender, body, 0)
-        if acct.get("balance",0) > 0:
-            cats.append("bank_info")   # special — sidebar only, card-এ দেখাবে না
+        # amount আছে (1 টাকাও) — sidebar summary-র জন্য রাখো
+        acct_tmp = get_acct(sender, body, amt)
+        if acct_tmp.get("balance",0) > 0 or amt > 0:
+            cats.append("bank_info")   # sidebar only, card-এ দেখাবে না
 
     if st == "personal":
         if ID_RE.search(body):         cats.append("identity")
@@ -563,9 +563,10 @@ def build_bank_summary(sms_list, extra_balances=None):
         svc = ai["service"]; d = summ[svc]
         d["service"] = svc
 
-        if s["tier"]:
+        # Summary-তে সব transaction count করো — 1 টাকা থেকে সব
+        amt = ai.get("amount",0) or 0
+        if amt > 0:
             d["txn_count"] += 1
-            amt = ai.get("amount",0) or 0
             if "Received" in (ai.get("direction","") or ""): d["total_in"]  += amt
             else:                                             d["total_out"] += amt
             if amt > d["max_txn"]: d["max_txn"] = amt
@@ -607,8 +608,12 @@ def build_bank_summary(sms_list, extra_balances=None):
 def generate_html(sms_list, stats, out_path, tn=""):
     now = datetime.now().strftime("%d %B %Y, %I:%M %p")
 
-    # bank_info — sidebar-এর জন্য, card-এ দেখাবে না
-    display_list = [s for s in sms_list if "bank_info" not in s.get("categories",[])]
+    # bank_info — sidebar summary-র জন্য, card-এ দেখাবে না
+    # display_list-এ শুধু 10K+ transaction এবং অন্য categories (personal, travel ইত্যাদি)
+    display_list = [s for s in sms_list
+                    if "bank_info" not in s.get("categories",[])
+                    and not (s.get("categories") == [f"txn_{s.get('tier','')}"]
+                             and s.get("tier","") == "")]
 
     months    = sorted({s["month"] for s in display_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in display_list)
