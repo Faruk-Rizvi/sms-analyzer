@@ -26,7 +26,8 @@ BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'mutual trust','mtb.','mtb ','\bmtb\b',
              'southeast bank','ab bank','ucb','hsbc','standard chartered',
              'ific','idlc','metlife','dutch-bangla','dutch bangla','dbbl',
-             'nexuspay','nexus pay','sonali bank']
+             'nexuspay','nexus pay','sonali bank',
+             'standardbnk','standard bank','standard islami']
 
 # Short-code senders that are actually banks (not to be filtered)
 BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}
@@ -105,6 +106,15 @@ SKIP_BODY_RE = re.compile(
     r"|\bলটারি\b|lottery|বিজয়ী\s*নম্বর"
     r"|নিবন্ধন.*ফ্রি.*বোনাস|ফ্রি\s*\+.*%.*বোনাস|\d+%\s*বোনাস|বোনাস\s*\d+%"
     r"|এখনই\s*নিবন্ধন|ক্যাসিনো|casino|জুয়া|\bbet\b"
+
+    # Eid / religious greeting — শুভেচ্ছা ও প্রমো মেসেজ বাদ
+    r"|eid\s*mubarak|ঈদ\s*মুবারক|ঈদ\s*মোবারক"
+    r"|ঈদুল\s*ফিতর|ঈদুল\s*আজহা|eid\s*ul\s*fitr|eid\s*ul\s*adha"
+    r"|পবিত্র\s*ঈদ.*শুভেচ্ছা|ঈদের\s*শুভেচ্ছা|ঈদ\s*কালেকশন|ঈদ\s*অফার|ঈদ\s*সেল"
+    r"|happy\s*eid|eid\s*greet|wishing.*eid|eid.*wishing|eid.*collection|eid.*offer"
+    r"|শুভ\s*নববর্ষ|শুভ\s*নব\s*বর্ষ|happy\s*new\s*year|নববর্ষের\s*শুভেচ্ছা"
+    r"|ফ্রি\s*সার্ভিস|ফ্রি\s*ডেলিভারি|free\s*service|free\s*delivery"
+    r"|ঈদ\s*গিফট|ঈদ\s*স্পেশাল|eid\s*special|eid\s*gift"
 
     # Short URL spam — কিন্তু bank-এর নিজস্ব link বাদ নয়
     r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order|nexuspay|nexus))",
@@ -228,6 +238,8 @@ TXN_P = [
     r'for\s+BDT\s+([\d,]+\.?\d*)',
     # IBBL: "Withdrawn 5000.00 BDT" / "5000.00 BDT"
     r'(?:Withdrawn|Deposited)\s+([\d,]+\.?\d*)\s+BDT',
+    # Standard Bank / Standard Islami: "BDT 1,00,000.00 credited/debited to/from A/C#"
+    r'BDT\s+([\d,]+\.?\d*)\s+(?:credited|debited)',
     r'[Pp]aid[:\s]*([\d,]+)',
 ]
 
@@ -319,6 +331,8 @@ def detect_service_from_body(body):
     """Body থেকে ব্যাংক/MFS শনাক্ত করে"""
     bl = body.lower()
     if "islami bank" in bl or re.search(r'\bibbl\b', bl):  return "bank"
+    if "standard islami" in bl or "standardbnk" in bl:     return "bank"
+    if "standard bank" in bl:                               return "bank"
     if "brac bank" in bl or "bracbank" in bl:               return "bank"
     if "trust bank" in bl or "trustbank" in bl:             return "bank"
     if "sonali bank" in bl:                                  return "bank"
@@ -409,6 +423,8 @@ def get_acct(sender, body, amt):
         elif "ibbl"     in sl or "islami" in sl: info["service"]="Islami Bank"
         elif "trustbank" in sl or "trust bank" in sl: info["service"]="Trust Bank"
         elif "trustcard" in sl: info["service"]="Trust Card"
+        elif "standardbnk" in sl or "standard bank" in sl or "standard islami" in sl:
+            info["service"]="Standard Bank"
         elif "sonali"   in sl: info["service"]="Sonali Bank"
         elif "brac"     in sl: info["service"]="BRAC Bank"
         elif "metlife"  in sl: info["service"]="MetLife"
@@ -416,6 +432,7 @@ def get_acct(sender, body, amt):
     # Body fallback — যেকোনো নম্বর থেকে আসলেও bank detect করবে
     if not info["service"]:
         if "islami bank" in bl or re.search(r'\bibbl\b',bl):         info["service"]="Islami Bank"
+        elif "standard islami" in bl or "standard bank" in bl:        info["service"]="Standard Bank"
         elif "brac bank" in bl or "bracbank" in bl:                   info["service"]="BRAC Bank"
         elif "mutual trust" in bl or "mtblbddh" in bl or re.search(r'\bmtb\b',bl):
             info["service"]="Mutual Trust Bank (MTB)"
@@ -977,8 +994,9 @@ def process_file(input_path, html_out, docx_out=None, target_number=""):
         if not item["body"].strip(): continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
         body_key  = item["body"].strip()
-        dt_str    = str(item["date"])[:13]   # YYYY-MM-DD HH — ১ ঘন্টার মধ্যে same body একটাই
-        dedup_key = (str(item["sender"]).strip().lower(), body_key, dt_str)
+        dt_str    = str(item["date"])[:13]   # YYYY-MM-DD HH — ১ ঘন্টার মধ্যে
+        # sender বাদ — যেকোনো sender থেকে হুবহু same body = duplicate
+        dedup_key = (body_key, dt_str)
         if dedup_key in seen: filtered_cnt+=1; continue
         seen.add(dedup_key)
         res = analyze_one(item["sender"], item["body"], item["date"],
