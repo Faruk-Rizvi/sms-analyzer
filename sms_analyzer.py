@@ -37,7 +37,6 @@ PROMO_NUMBERS = {
     '8801886016460','01886016460',
     '8801782542199','01782542199',
     '8801554702104','01554702104',
-    # নতুন প্রমো/সার্ভিস নম্বর
     '8801905186028','01905186028',
     '8801401866071','01401866071',
     '8801927787270','01927787270',
@@ -47,6 +46,18 @@ PROMO_NUMBERS = {
     '8801908568652','01908568652',
     '8801402940991','01402940991',
     '8801934147013','01934147013',
+    # নতুন block
+    '8801961931606','01961931606',
+    # mygov OTP sender
+    '8801552146224','01552146224',
+    # Microsite OTP sender
+    '8801847348716','01847348716',
+}
+
+# OTP sender names — always filter
+OTP_SENDERS = {
+    'gp otp','gpotp','boesl','zipper',
+    'nid otp','mygov otp','mygov',
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -61,6 +72,8 @@ def stype(sender):
     if s in PROMO_NUMBERS: return "promo"
     # Bank short-codes — always bank
     if s in BANK_SHORTCODES: return "bank"
+    # NexusPay/DBBL uses "[ ! ]" as sender
+    if s in ('[ ! ]', '[!]', '!'): return "bank" 
     # MTB. specific match
     if re.match(r'^mtb\.?\s*$', sl): return "bank"
     if any(m in sl for m in MFS_KW):  return "mfs"
@@ -124,7 +137,7 @@ MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed ca
 
 # OTP / verification — সব filter হবে
 OTP_BODY_RE = re.compile(
-    r'(?:your\s+)?otp\s+(?:is|for)|one.time.(?:password|key|code|pin)[\s:]'
+    r'(?:your\s+)?otp\s+(?:is|for|to\s+proceed)|one.time.(?:password|key|code|pin)[\s:]'
     r'|verification\s+code\s+(?:is|for)'
     r'|do\s+not\s+share\s+(?:this|your|otp)'
     r'|(?:your\s+)?code\s+is\s*:\s*\d'
@@ -134,16 +147,22 @@ OTP_BODY_RE = re.compile(
     r'|authentication\s+code\s+(?:is|for)'
     r'|login\s+otp\b'
     r'|ibas.*use.*(?:number|code|key)\s*:\s*\d'
-    r'|please\s+use\s+the\s+(?:number|code|key)\s*:\s*\d',
+    r'|please\s+use\s+the\s+(?:number|code|key)\s*:\s*\d'
+    r'|সক্রিয়করণ\s*কোড[\s:]+\d'
+    r'|ticket\s+purchase.*is\s*:\s*\d',
     re.I)
 
 def is_filtered(sender, body):
     s  = str(sender).strip()
     st = stype(s)
+    # OTP sender names — always filter
+    if s.lower() in OTP_SENDERS: return True
     # Promotional numbers — always filter
     if st == "promo": return True
     # OTP/key মেসেজ — সব sender-এর জন্য বাদ
     if OTP_BODY_RE.search(body): return True
+    # Courier pickup/OTP/cancelled — বাদ
+    if COURIER_FILTER_RE.search(body): return True
     # Body keywords — সব sender-এর জন্য check করো
     if SKIP_BODY_RE.search(body): return True
     if MISSED_RE.search(body): return True
@@ -209,6 +228,8 @@ def merge(sms_list):
 TXN_P = [
     r'received\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+from',
     r'received\s+deposit.*?of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    r'received\s+remittance.*?[Tt]otal[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',  # bKash remittance
+    r'remittance.*?[Tt]otal[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'sent\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+to',
     r'[Cc]ash\s*[Ii]n\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Cc]ash\s*[Oo]ut\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
@@ -294,17 +315,18 @@ TRAVEL_RE = re.compile(
     r'|ওমরা|umrah|\bহজ\b|omra|ফ্লাইট|ভিসা|\bNOC\b|N\.O\.C|ডিরেক্ট\s+ফ্লাইট', re.I)
 
 COURIER_RE = re.compile(
-    # প্রতিষ্ঠানের নাম
-    r'\bsteadfast\b|paperfly|sundarban\s+courier|\becourier\b|\bredx\b'
-    r'|sa\s+paribahan|s\.a\.\s*paribahan|sundarban|continental\s+courier'
-    r'|\bpathao\b|\bdaraz\b|\bchaldal\b'
-    # ডেলিভারি সংক্রান্ত
-    r'|your\s+parcel|track\s+your\s+parcel|your\s+order\s+has'
-    r'|out\s+for\s+delivery|delivered\s+to|delivery\s+address'
-    r'|order\s+shipped|package\s+delivered|আপনার\s+পার্সেল'
-    r'|পার্সেল\s+ডেলিভারি|ডেলিভারি\s+হয়েছে'
-    # Tracking
-    r'|tracking\s+(no|number|id)|track\s+at\s+https'
+    # শুধু tracking link বা bus ticket (location সহ) রাখো
+    r'track\s+your\s+parcel|steadfast\.com\.bd/t/|ptho\.app/'
+    r'|track\s+at\s+https|parcel\s+id.*track|tracking\s+id'
+    r'|bus\s+point.*dhaka|dhaka.*bus\s+point|seat.*reserved.*from.*to'  # bus ticket
+    , re.I)
+
+# Courier messages to FILTER (OTP, pickup, cancelled)
+COURIER_FILTER_RE = re.compile(
+    r'ডেলিভারি\s*ওটিপি|delivery\s*otp|অর্ডারটির\s*ডেলিভারি'
+    r'|আমরা.*থেকে\s+আপনার\s+পণ্য.*সংগ্রহ'  # pickup notification
+    r'|has\s+been\s+cancelled|cancelled\.?\s+to\s+complain'  # cancelled
+    r'|cash\s+on\s+delivery.*যাচাই|verification\s+code.*delivery'
     , re.I)
 
 SHOPPING_RE = re.compile(
