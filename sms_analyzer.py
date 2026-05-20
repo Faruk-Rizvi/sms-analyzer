@@ -163,6 +163,8 @@ def is_filtered(sender, body):
     if OTP_BODY_RE.search(body): return True
     # Courier pickup/OTP/cancelled — বাদ
     if COURIER_FILTER_RE.search(body): return True
+    # Real estate promo — বাদ
+    if REAL_ESTATE_FILTER_RE.search(body): return True
     # Body keywords — সব sender-এর জন্য check করো
     if SKIP_BODY_RE.search(body): return True
     if MISSED_RE.search(body): return True
@@ -334,8 +336,37 @@ SHOPPING_RE = re.compile(
     r'|walton|কিস্তি|installment|barcode.*নিবন্ধন'
     r'|desco|dpdc|wasa|titas\s+gas|বিদ্যুৎ\s+বিল', re.I)
 
+# শিক্ষা প্রতিষ্ঠান — ভর্তি / পেমেন্ট / রেজাল্ট
+EDU_RE = re.compile(
+    r'admission|ভর্তি|semester\s+fee|tuition\s+fee|semester\s+payment'
+    r'|student\s+id|roll\s+no.*exam|result\s+published|পরীক্ষার\s+ফলাফল'
+    r'|university|college|school|বিশ্ববিদ্যালয়|মহাবিদ্যালয়|বিদ্যালয়'
+    r'|hsc|ssc|jsc|psc|\bdiu\b|\bnsu\b|\bbrac\s+university\b|\buiu\b'
+    r'|আইইউবি|নর্থসাউথ|ব্র্যাক\s+বিশ্ববিদ্যালয়'
+    r'|hall\s+fee|hall\s+due|hostel\s+fee|registration\s+fee.*university'
+    r'|payment.*received.*university|university.*payment'
+    , re.I)
+
+# BO Account (Beneficiary Owner — শেয়ার মার্কেট)
+BO_RE = re.compile(
+    r'\bBO\s+(?:account|a/c|no|id)\b|\bbeneficiary\s+owner\b'
+    r'|\bCDBC\b|\bCDSL\b|\bBSEC\b|stock\s+exchange|share\s+market'
+    r'|\bDSE\b|\bCSE\b|bo\s+account|বিও\s+একাউন্ট'
+    r'|demat\s+account|portfolio.*shares?'
+    , re.I)
+
 OTP_RE = OTP_BODY_RE  # alias — same regex
 LOW_BAL_RE = re.compile(r'your\s+balance\s+is\s+(very\s+low|finished)', re.I)
+
+# রিয়েল এস্টেট প্রমো — বাদ দেওয়া হবে
+REAL_ESTATE_FILTER_RE = re.compile(
+    r'জমি\s*কিনুন|ফ্ল্যাট\s*কিনুন|flat\s*(?:sale|sell|buy|for\s*sale)'
+    r'|house\s*(?:sale|sell|for\s*sale|wanted)|land\s*(?:sale|sell|for\s*sale|wanted)'
+    r'|plot\s*(?:sale|sell|for\s*sale)|apartment\s*for\s*sale'
+    r'|জমি\s*বিক্রয়|ফ্ল্যাট\s*বিক্রয়|বাড়ি\s*বিক্রয়|জমি\s*পাওয়া\s*যাচ্ছে'
+    r'|real\s*estate|property\s*(?:sale|sell|for\s*sale)'
+    r'|বিক্রয়\s*হবে.*(?:জমি|ফ্ল্যাট|বাড়ি|প্লট)'
+    , re.I)
 
 # ── একটি SMS বিশ্লেষণ ──────────────────────────────────────
 # Body থেকে bank/MFS service detect করার জন্য keywords
@@ -397,6 +428,8 @@ def analyze_one(sender, body, date, direction=""):
         elif LOVE_RE.search(body):     cats.append("love_family")
         elif TRAVEL_RE.search(body):   cats.append("travel")
         elif COURIER_RE.search(body):  cats.append("courier")
+        elif EDU_RE.search(body):      cats.append("education")
+        elif BO_RE.search(body):       cats.append("bo_account")
         elif SHOPPING_RE.search(body): cats.append("shopping")
         elif len(body.strip()) > 20:   cats.append("personal")
         if not cats: return None
@@ -404,6 +437,8 @@ def analyze_one(sender, body, date, direction=""):
     elif st in ("service","other"):
         if TRAVEL_RE.search(body):        cats.append("travel")
         elif COURIER_RE.search(body):     cats.append("courier")
+        elif EDU_RE.search(body):         cats.append("education")
+        elif BO_RE.search(body):          cats.append("bo_account")
         elif SHOPPING_RE.search(body):    cats.append("shopping")
         elif ID_RE.search(body):          cats.append("identity")
         if not cats and not t: return None
@@ -566,16 +601,18 @@ def load_csv_f(path):
 
 # ── HTML ───────────────────────────────────────────────────
 CAT_META = {
-    "txn_high":   {"label":"উচ্চ লেনদেন (১লাখ+)",     "color":"#991b1b","icon":"🔴"},
-    "txn_med":    {"label":"মাঝারি লেনদেন (৫০K-১লাখ)", "color":"#dc2626","icon":"🟠"},
-    "txn_small":  {"label":"ছোট লেনদেন (১০K-৫০K)",     "color":"#ea580c","icon":"🟡"},
-    "identity":   {"label":"পরিচয় / তথ্য",             "color":"#0369a1","icon":"👤"},
-    "love_family":{"label":"পারিবারিক / আবেগ",          "color":"#db2777","icon":"❤️"},
-    "travel":     {"label":"ভ্রমণ / ভিসা / ওমরা",      "color":"#0284c7","icon":"✈️"},
-    "courier":    {"label":"কুরিয়ার / ডেলিভারি",        "color":"#6d28d9","icon":"📦"},
-    "shopping":   {"label":"কেনাকাটা / বিল",            "color":"#059669","icon":"🛒"},
-    "service":    {"label":"সার্ভিস মেসেজ",              "color":"#475569","icon":"🔔"},
-    "personal":   {"label":"ব্যক্তিগত কথোপকথন",        "color":"#64748b","icon":"💬"},
+    "txn_high":   {"label":"High Transaction (100K+)",       "color":"#991b1b","icon":"🔴"},
+    "txn_med":    {"label":"Medium Transaction (50K–100K)",  "color":"#dc2626","icon":"🟠"},
+    "txn_small":  {"label":"Small Transaction (10K–50K)",    "color":"#ea580c","icon":"🟡"},
+    "identity":   {"label":"Identity / Profile Info",        "color":"#0369a1","icon":"👤"},
+    "love_family":{"label":"Personal / Family",              "color":"#db2777","icon":"❤️"},
+    "travel":     {"label":"Travel / Visa / Umrah",          "color":"#0284c7","icon":"✈️"},
+    "courier":    {"label":"Courier / Delivery",             "color":"#6d28d9","icon":"📦"},
+    "education":  {"label":"Education / Admission / Payment","color":"#0891b2","icon":"🎓"},
+    "bo_account": {"label":"BO Account / Stock Market",      "color":"#7c3aed","icon":"📈"},
+    "shopping":   {"label":"Shopping / Billing",             "color":"#059669","icon":"🛒"},
+    "service":    {"label":"Service Message",                "color":"#475569","icon":"🔔"},
+    "personal":   {"label":"Personal Conversation",          "color":"#64748b","icon":"💬"},
 }
 TIER_COL = {"high":"#991b1b","med":"#dc2626","small":"#ea580c","":"#94a3b8"}
 TIER_BG  = {"high":"#fef2f2","med":"#fff5f5","small":"#fff7ed","":"#f8fafc"}
@@ -671,7 +708,9 @@ def generate_html(sms_list, stats, out_path, tn=""):
     CAT_EN = {"txn_high":"High Transaction (100K+)","txn_med":"Medium Transaction (50K–100K)",
               "txn_small":"Small Transaction (10K–50K)","identity":"Identity / Profile Info",
               "love_family":"Personal / Family","travel":"Travel / Visa / Umrah",
-              "courier":"Courier / Delivery","shopping":"Shopping / Billing",
+              "courier":"Courier / Delivery","education":"Education / Admission / Payment",
+              "bo_account":"BO Account / Stock Market",
+              "shopping":"Shopping / Billing",
               "service":"Service Messages","personal":"Personal Conversation"}
     def esc(t): return hl.escape(str(t))
     def cat_tags(cats):
@@ -764,7 +803,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
     if smsmt_count: pass  # SMSMT shown in summary only, not as filter button
     if smsmo_count: pass  # SMSMO shown in summary only, not as filter button
-    for ck in ["identity","love_family","travel","courier","shopping","personal"]:
+    for ck in ["identity","love_family","travel","courier","education","bo_account","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
         meta=CAT_META.get(ck,{}); lbl=CAT_EN.get(ck,meta.get("label",ck))
