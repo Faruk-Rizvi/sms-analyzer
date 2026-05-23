@@ -130,7 +130,25 @@ SKIP_BODY_RE = re.compile(
     r"|ঈদ\s*গিফট|ঈদ\s*স্পেশাল|eid\s*special|eid\s*gift"
 
     # Short URL spam — কিন্তু bank-এর নিজস্ব link বাদ নয়
-    r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order|nexuspay|nexus))",
+    r"|ln\.run/|bit\.ly/(?!.*(?:parcel|track|order|nexuspay|nexus))"
+
+    # সরকারি তথ্য / ৯৯৯ — বাদ
+    r"|\b999\b|৯৯৯|জাতীয়\s*তথ্য\s*বাতায়ন"
+    r"|government\s*(?:info|notice|alert)|সরকারি\s*বিজ্ঞপ্তি"
+    r"|জাতীয়\s*হেল্পলাইন|national\s*helpline"
+
+    # NGO / Insurance — বাদ
+    r"|ngo\s*(?:সেবা|service)|এনজিও|microcredit|ক্ষুদ্রঋণ"
+    r"|insurance\s*(?:premium|policy|renewal|due)|বীমা\s*(?:প্রিমিয়াম|পলিসি|নবায়ন)"
+    r"|life\s*insurance|স্বাস্থ্য\s*বীমা|জীবন\s*বীমা|মেয়াদী\s*বীমা"
+    r"|delta\s*life|metlife.*premium|sunlife|pragati\s*life|national\s*life.*insurance"
+
+    # Home Tutor / Coaching centre — প্রমো বাদ
+    r"|home\s*tutor(?:\s*available|\s*needed|\s*wanted|\s*provide)"
+    r"|need\s*(?:home\s*)?tutors?|experienced.*(?:male|female).*tutor"
+    r"|du/buet/medical.*tutor|tutor.*du/buet|coaching\s*(?:centre|center|class)"
+    r"|কোচিং\s*(?:সেন্টার|ক্লাস|করুন)|হোম\s*টিউটর\s*(?:পাওয়া|দেওয়া|প্রয়োজন|চাই)"
+    r"|free\s*(?:trial|class).*tutor|two\s*trial.*free\s*class",
     re.I | re.S)
 
 MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন', re.I)
@@ -347,6 +365,16 @@ EDU_RE = re.compile(
     r'|payment.*received.*university|university.*payment'
     , re.I)
 
+# সরকারি চালান / ট্রেজারি / কোর্ট ফি — রাখতে হবে
+CHALAN_RE = re.compile(
+    r'challan|chalan|চালান|treasury\s*challan|সরকারি\s*চালান'
+    r'|court\s*fee|কোর্ট\s*ফি|court\s*challan'
+    r'|ibas\+\+|iBAS|treasury.*payment|government.*challan'
+    r'|revenue\s*stamp|রাজস্ব|tax\s*payment.*treasury'
+    r'|brtc.*fee|brta.*fee|driving\s*license.*fee|vehicle.*registration.*fee'
+    r'|passport\s*fee|জাতীয়\s*রাজস্ব|national\s*board\s*of\s*revenue'
+    , re.I)
+
 # BO Account (Beneficiary Owner — শেয়ার মার্কেট)
 BO_RE = re.compile(
     r'\bBO\s+(?:account|a/c|no|id)\b|\bbeneficiary\s+owner\b'
@@ -366,6 +394,10 @@ REAL_ESTATE_FILTER_RE = re.compile(
     r'|জমি\s*বিক্রয়|ফ্ল্যাট\s*বিক্রয়|বাড়ি\s*বিক্রয়|জমি\s*পাওয়া\s*যাচ্ছে'
     r'|real\s*estate|property\s*(?:sale|sell|for\s*sale)'
     r'|বিক্রয়\s*হবে.*(?:জমি|ফ্ল্যাট|বাড়ি|প্লট)'
+    r'|রেডি\s*প্লট|ready\s*plot|প্লট\s*বিক্রয়|plot\s*বিক্রয়'
+    r'|ফ্ল্যাট\s*বিক্রি|flat\s*বিক্রি|apartment\s*বিক্রয়'
+    r'|(?:আবাসিক|বাণিজ্যিক)\s*(?:প্লট|ফ্ল্যাট|জমি).*(?:বিক্রয়|বিক্রি|পাওয়া)'
+    r'|duplex|(?:কাঠা|শতাংশ|decimal).*(?:জমি|প্লট).*(?:বিক্রয়|বিক্রি)'
     , re.I)
 
 # ── একটি SMS বিশ্লেষণ ──────────────────────────────────────
@@ -428,6 +460,7 @@ def analyze_one(sender, body, date, direction=""):
         elif LOVE_RE.search(body):     cats.append("love_family")
         elif TRAVEL_RE.search(body):   cats.append("travel")
         elif COURIER_RE.search(body):  cats.append("courier")
+        elif CHALAN_RE.search(body):   cats.append("chalan")
         elif EDU_RE.search(body):      cats.append("education")
         elif BO_RE.search(body):       cats.append("bo_account")
         elif SHOPPING_RE.search(body): cats.append("shopping")
@@ -437,6 +470,7 @@ def analyze_one(sender, body, date, direction=""):
     elif st in ("service","other"):
         if TRAVEL_RE.search(body):        cats.append("travel")
         elif COURIER_RE.search(body):     cats.append("courier")
+        elif CHALAN_RE.search(body):      cats.append("chalan")
         elif EDU_RE.search(body):         cats.append("education")
         elif BO_RE.search(body):          cats.append("bo_account")
         elif SHOPPING_RE.search(body):    cats.append("shopping")
@@ -601,18 +635,19 @@ def load_csv_f(path):
 
 # ── HTML ───────────────────────────────────────────────────
 CAT_META = {
-    "txn_high":   {"label":"High Transaction (100K+)",       "color":"#991b1b","icon":"🔴"},
-    "txn_med":    {"label":"Medium Transaction (50K–100K)",  "color":"#dc2626","icon":"🟠"},
-    "txn_small":  {"label":"Small Transaction (10K–50K)",    "color":"#ea580c","icon":"🟡"},
-    "identity":   {"label":"Identity / Profile Info",        "color":"#0369a1","icon":"👤"},
-    "love_family":{"label":"Personal / Family",              "color":"#db2777","icon":"❤️"},
-    "travel":     {"label":"Travel / Visa / Umrah",          "color":"#0284c7","icon":"✈️"},
-    "courier":    {"label":"Courier / Delivery",             "color":"#6d28d9","icon":"📦"},
-    "education":  {"label":"Education / Admission / Payment","color":"#0891b2","icon":"🎓"},
-    "bo_account": {"label":"BO Account / Stock Market",      "color":"#7c3aed","icon":"📈"},
-    "shopping":   {"label":"Shopping / Billing",             "color":"#059669","icon":"🛒"},
-    "service":    {"label":"Service Message",                "color":"#475569","icon":"🔔"},
-    "personal":   {"label":"Personal Conversation",          "color":"#64748b","icon":"💬"},
+    "txn_high":   {"label":"High Transaction (100K+)",        "color":"#991b1b","icon":"🔴"},
+    "txn_med":    {"label":"Medium Transaction (50K–100K)",   "color":"#dc2626","icon":"🟠"},
+    "txn_small":  {"label":"Small Transaction (10K–50K)",     "color":"#ea580c","icon":"🟡"},
+    "identity":   {"label":"Identity / Profile Info",         "color":"#0369a1","icon":"👤"},
+    "love_family":{"label":"Personal / Family",               "color":"#db2777","icon":"❤️"},
+    "travel":     {"label":"Travel / Visa / Umrah",           "color":"#0284c7","icon":"✈️"},
+    "courier":    {"label":"Courier / Delivery",              "color":"#6d28d9","icon":"📦"},
+    "chalan":     {"label":"Govt. Challan / Treasury / Court","color":"#047857","icon":"🏛️"},
+    "education":  {"label":"Education / Admission / Payment", "color":"#0891b2","icon":"🎓"},
+    "bo_account": {"label":"BO Account / Stock Market",       "color":"#7c3aed","icon":"📈"},
+    "shopping":   {"label":"Shopping / Billing",              "color":"#059669","icon":"🛒"},
+    "service":    {"label":"Service Message",                 "color":"#475569","icon":"🔔"},
+    "personal":   {"label":"Personal Conversation",           "color":"#64748b","icon":"💬"},
 }
 TIER_COL = {"high":"#991b1b","med":"#dc2626","small":"#ea580c","":"#94a3b8"}
 TIER_BG  = {"high":"#fef2f2","med":"#fff5f5","small":"#fff7ed","":"#f8fafc"}
@@ -708,7 +743,8 @@ def generate_html(sms_list, stats, out_path, tn=""):
     CAT_EN = {"txn_high":"High Transaction (100K+)","txn_med":"Medium Transaction (50K–100K)",
               "txn_small":"Small Transaction (10K–50K)","identity":"Identity / Profile Info",
               "love_family":"Personal / Family","travel":"Travel / Visa / Umrah",
-              "courier":"Courier / Delivery","education":"Education / Admission / Payment",
+              "courier":"Courier / Delivery","chalan":"Govt. Challan / Treasury / Court",
+              "education":"Education / Admission / Payment",
               "bo_account":"BO Account / Stock Market",
               "shopping":"Shopping / Billing",
               "service":"Service Messages","personal":"Personal Conversation"}
@@ -803,7 +839,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
     if smsmt_count: pass  # SMSMT shown in summary only, not as filter button
     if smsmo_count: pass  # SMSMO shown in summary only, not as filter button
-    for ck in ["identity","love_family","travel","courier","education","bo_account","shopping","personal"]:
+    for ck in ["identity","love_family","travel","courier","chalan","education","bo_account","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
         meta=CAT_META.get(ck,{}); lbl=CAT_EN.get(ck,meta.get("label",ck))
