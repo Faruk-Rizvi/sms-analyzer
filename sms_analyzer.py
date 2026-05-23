@@ -248,7 +248,8 @@ def merge(sms_list):
 TXN_P = [
     r'received\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+from',
     r'received\s+deposit.*?of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
-    r'received\s+remittance.*?[Tt]otal[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',  # bKash remittance
+    r'received\s+a\s+deposit\s+of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',  # bKash from bank
+    r'received\s+remittance.*?[Tt]otal[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'remittance.*?[Tt]otal[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'sent\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+to',
     r'[Cc]ash\s*[Ii]n\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
@@ -281,6 +282,10 @@ TXN_P = [
     r'(?:Withdrawn|Deposited)\s+([\d,]+\.?\d*)\s+BDT',
     # Standard Bank / Standard Islami: "BDT 1,00,000.00 credited/debited to/from A/C#"
     r'BDT\s+([\d,]+\.?\d*)\s+(?:credited|debited)',
+    # Bangla MFS patterns
+    r'আপনি\s+([\d,]+\.?\d*)\s*টাকা\s+(?:পেয়েছেন|ক্যাশ\s*ইন)',
+    r'([\d,]+\.?\d*)\s*টাকা\s+(?:পেয়েছেন|জমা\s*হয়েছে)',
+    r'([\d,]+\.?\d*)\s*টাকা\s+ক্যাশ\s*আউট',
     r'[Pp]aid[:\s]*([\d,]+)',
 ]
 
@@ -413,8 +418,11 @@ BODY_MFS_RE = re.compile(
 )
 
 def detect_service_from_body(body):
-    """Body থেকে ব্যাংক/MFS শনাক্ত করে"""
+    """Body থেকে ব্যাংক/MFS শনাক্ত করে।
+    Note: "received from Sonali Bank Account" is bKash SMS — body mention != sender bank"""
     bl = body.lower()
+    # bKash/Nagad transfer FROM bank messages — এগুলো MFS transaction
+    if re.search(r'received\s+a?\s*deposit\s+of\s+tk.*from\s+\w+\s+bank\s+account', bl): return "mfs"
     if "islami bank" in bl or re.search(r'\bibbl\b', bl):  return "bank"
     if "standard islami" in bl or "standardbnk" in bl:     return "bank"
     if "standard bank" in bl:                               return "bank"
@@ -570,7 +578,13 @@ def get_acct(sender, body, amt):
         info["direction"] = "Received"
     elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b', bl2):
         info["direction"] = "Sent"
-    # Priority 4: transferred TO account = Received, transferred FROM account = Sent
+    # Priority 4: transferred TO/FROM — account perspective
+    # "transferred to your A/C / account" = Received (money came in)
+    # "transferred to Nagad/bKash/MFS/branch" = Sent (money went out)
+    elif re.search(r'transfer(?:red)?\s+to\s+(?:nagad|bkash|rocket|upay|mfs|mcash)', bl2):
+        info["direction"] = "Sent"
+    elif re.search(r'transfer(?:red)?\s+to\s+(?:your\s+)?(?:a/c|account)', bl2):
+        info["direction"] = "Received"
     elif re.search(r'transfer(?:red)?\s+to\b', bl2):
         info["direction"] = "Received"
     elif re.search(r'transfer(?:red)?\s+from\b', bl2):
