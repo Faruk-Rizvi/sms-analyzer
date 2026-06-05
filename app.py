@@ -355,72 +355,93 @@ if analyze_btn:
             try: os.unlink(tmp_in)
             except: pass
 
-        tn_display = result.get("target_number","") or "All Numbers"
-
-        # Result Banner
-        st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="result-banner">
-          <div class="rb-left">
-            <h3>✅ Analysis Complete</h3>
-            <p>Target: <strong style="color:#fff">{tn_display}</strong>
-               &nbsp;·&nbsp; File: <strong style="color:#fff">{uploaded.name}</strong></p>
-          </div>
-          <div class="rb-stats">
-            <div class="rs r"><div class="rs-num">{result.get("high",0)}</div><div class="rs-lbl">High (100K+)</div></div>
-            <div class="rs o"><div class="rs-num">{result.get("med",0)}</div><div class="rs-lbl">Medium (50K)</div></div>
-            <div class="rs a"><div class="rs-num">{result.get("small",0)}</div><div class="rs-lbl">Small (10K)</div></div>
-            <div class="rs"><div class="rs-num">{result.get("total_shown",0)}</div><div class="rs-lbl">Total Shown</div></div>
-            <div class="rs"><div class="rs-num">{result.get("total_sms",0)}</div><div class="rs-lbl">Total SMS</div></div>
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-        # Download
+        # Generate HTML bytes
+        html_bytes = b""
         if os.path.exists(tmp_html):
             with open(tmp_html,"rb") as f: html_bytes = f.read()
             try: os.unlink(tmp_html)
             except: pass
-            base_name = os.path.splitext(uploaded.name)[0]
-            tn_sfx = f"_{result.get('target_number','')}" if result.get("target_number") else ""
-            dl_name = f"{base_name}{tn_sfx}_intelligence_report.html"
 
-            c1,c2,c3 = st.columns([1,2,1])
-            with c2:
-                st.download_button(
-                    label="⬇️   Download HTML Intelligence Report",
-                    data=html_bytes,
-                    file_name=dl_name,
-                    mime="text/html",
-                    use_container_width=True,
-                )
-            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        # Generate DOCX bytes
+        docx_bytes = b""
+        try:
+            _stats = {"total":result.get("total_sms",0),
+                      "after_merge":result.get("after_merge",0),
+                      "filtered":result.get("filtered",0)}
+            docx_bytes = generate_docx(
+                result.get("_results",[]),
+                result.get("_stats", _stats),
+                result.get("_tn", result.get("target_number",""))
+            )
+        except Exception as docx_err:
+            st.warning(f"⚠️ Word report could not be generated: {docx_err}")
 
-            # ── DOCX Download ──────────────────────────────────
-            try:
-                _stats = {"total":result.get("total_sms",0),
-                          "after_merge":result.get("after_merge",0),
-                          "filtered":result.get("filtered",0)}
-                docx_bytes = generate_docx(
-                    result.get("_results",[]),
-                    result.get("_stats", _stats),
-                    result.get("_tn", result.get("target_number",""))
-                )
-                dl_name_docx = dl_name.replace(".html", ".docx")
-                c1d,c2d,c3d = st.columns([1,2,1])
-                with c2d:
-                    st.download_button(
-                        label="⬇️   Download Word (.docx) Report",
-                        data=docx_bytes,
-                        file_name=dl_name_docx,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True,
-                    )
-            except Exception as docx_err:
-                st.warning(f"⚠️ Word report could not be generated: {docx_err}")
+        # session_state এ সংরক্ষণ — download button click করলেও হারাবে না
+        st.session_state["result"]      = result
+        st.session_state["html_bytes"]  = html_bytes
+        st.session_state["docx_bytes"]  = docx_bytes
+        st.session_state["uploaded_name"] = uploaded.name
 
-            st.markdown("""
-            <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
-              ℹ️ Word report includes: Cover page, Bank/MFS Summary, Tier Breakdown, and full SMS message table.
-            </div>""", unsafe_allow_html=True)
+# ── Show result if available in session ──────────────────────
+if "result" in st.session_state and st.session_state["result"]:
+    result      = st.session_state["result"]
+    html_bytes  = st.session_state.get("html_bytes", b"")
+    docx_bytes  = st.session_state.get("docx_bytes", b"")
+    fname       = st.session_state.get("uploaded_name","report")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    tn_display = result.get("target_number","") or "All Numbers"
+
+    # Result Banner
+    st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="result-banner">
+      <div class="rb-left">
+        <h3>✅ Analysis Complete</h3>
+        <p>Target: <strong style="color:#fff">{tn_display}</strong>
+           &nbsp;·&nbsp; File: <strong style="color:#fff">{fname}</strong></p>
+      </div>
+      <div class="rb-stats">
+        <div class="rs r"><div class="rs-num">{result.get("high",0)}</div><div class="rs-lbl">High (100K+)</div></div>
+        <div class="rs o"><div class="rs-num">{result.get("med",0)}</div><div class="rs-lbl">Medium (50K)</div></div>
+        <div class="rs a"><div class="rs-num">{result.get("small",0)}</div><div class="rs-lbl">Small (10K)</div></div>
+        <div class="rs"><div class="rs-num">{result.get("total_shown",0)}</div><div class="rs-lbl">Total Shown</div></div>
+        <div class="rs"><div class="rs-num">{result.get("total_sms",0)}</div><div class="rs-lbl">Total SMS</div></div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # Download buttons
+    base_name = os.path.splitext(fname)[0]
+    tn_sfx = f"_{result.get('target_number','')}" if result.get("target_number") else ""
+    dl_name = f"{base_name}{tn_sfx}_intelligence_report"
+
+    c1,c2,c3 = st.columns([1,2,1])
+    with c2:
+        if html_bytes:
+            st.download_button(
+                label="⬇️   Download HTML Intelligence Report",
+                data=html_bytes,
+                file_name=dl_name + ".html",
+                mime="text/html",
+                use_container_width=True,
+                key="dl_html",
+            )
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    c1d,c2d,c3d = st.columns([1,2,1])
+    with c2d:
+        if docx_bytes:
+            st.download_button(
+                label="⬇️   Download Word (.docx) Report",
+                data=docx_bytes,
+                file_name=dl_name + ".docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                key="dl_docx",
+            )
+
+    st.markdown("""
+    <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
+      ℹ️ HTML রিপোর্টে built-in Download বাটন আছে। Word রিপোর্টে Cover, Bank/MFS Summary, Tier Breakdown এবং সম্পূর্ণ SMS টেবিল রয়েছে।
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
