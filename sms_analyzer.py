@@ -214,34 +214,45 @@ def to_dt(d):
     return datetime.min
 
 def merge(sms_list):
-    """শুধু ব্যক্তিগত BD নম্বরের ভাঙা SMS জোড়া লাগায়।
-    Bank / MFS / Service SMS কখনো merge হবে না।"""
+    """ভাঙা (concatenated) SMS জোড়া লাগায়।
+    - Personal BD নম্বর: ২ মিনিটের মধ্যে একই sender → merge
+    - MFS/Bank/Service (যেমন bKashNotice): ৩০ সেকেন্ডের মধ্যে একই sender → merge
+      (এই ধরনের SMS অপারেটর নিজে ভেঙে পাঠায়, body continuation বোঝা যায়)
+    """
     items = sorted(sms_list, key=lambda x: to_dt(x["date"]))
     out, i = [], 0
     while i < len(items):
-        cur  = dict(items[i])
-        st   = stype(cur["sender"])
-        # Bank/MFS/Service/Other — merge নয়, সরাসরি রাখো
-        if st != "personal":
-            cur["parts"] = 1
-            out.append(cur)
-            i += 1
-            continue
-        # Personal BD নম্বর — ২ মিনিটের মধ্যে একই sender হলে জোড়া
-        dt0  = to_dt(cur["date"])
-        sl0  = cur["sender"].strip().lower()
+        cur = dict(items[i])
+        st  = stype(cur["sender"])
+        dt0 = to_dt(cur["date"])
+        sl0 = cur["sender"].strip().lower()
         body = cur["body"]
-        j = i + 1
-        while j < len(items):
-            nx = items[j]
-            if (stype(nx["sender"]) == "personal" and
-                    nx["sender"].strip().lower() == sl0 and
-                    abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 120):
-                body += "\n" + nx["body"]
-                j += 1
-            else:
-                break
-        cur["body"]  = body
+
+        if st == "personal":
+            # Personal: ২ মিনিট window
+            j = i + 1
+            while j < len(items):
+                nx = items[j]
+                if (stype(nx["sender"]) == "personal"
+                        and nx["sender"].strip().lower() == sl0
+                        and abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 120):
+                    body += " " + nx["body"]
+                    j += 1
+                else:
+                    break
+        else:
+            # MFS/Bank/Service/Other: ৩০ সেকেন্ড window — same sender, continuation
+            j = i + 1
+            while j < len(items):
+                nx = items[j]
+                if (nx["sender"].strip().lower() == sl0
+                        and abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 30):
+                    body += " " + nx["body"]
+                    j += 1
+                else:
+                    break
+
+        cur["body"]  = body.strip()
         cur["parts"] = j - i
         out.append(cur)
         i = j
@@ -462,10 +473,10 @@ def analyze_one(sender, body, date, direction=""):
     # MFS/Bank — OTP ও low balance বাদ
     if st in ("mfs","bank") and not t:
         if OTP_RE.search(body) or LOW_BAL_RE.search(body): return None
-        # amount আছে (1 টাকাও) — sidebar summary-র জন্য রাখো
+        # amount আছে — sidebar summary-র জন্য রাখো (card-এ দেখাবে না)
         acct_tmp = get_acct(sender, body, amt)
         if acct_tmp.get("balance",0) > 0 or amt > 0:
-            cats.append("bank_info")   # sidebar only, card-এ দেখাবে না
+            cats.append("bank_info")   # sidebar only
 
     if st == "personal":
         if ID_RE.search(body):         cats.append("identity")
