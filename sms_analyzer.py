@@ -52,12 +52,15 @@ PROMO_NUMBERS = {
     '8801552146224','01552146224',
     # Microsite OTP sender
     '8801847348716','01847348716',
+    # Udvash coaching promo number
+    '8809601775566','9601775566',
 }
 
 # OTP sender names — always filter
 OTP_SENDERS = {
     'gp otp','gpotp','boesl','zipper',
     'nid otp','mygov otp','mygov',
+    'udvash',  # coaching promo
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -254,6 +257,7 @@ TXN_P = [
     r'sent\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+to',
     r'[Cc]ash\s*[Ii]n\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Cc]ash\s*[Oo]ut\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    r'[Ss]end\s+[Mm]oney\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',   # bKash Send Money
     r'[Mm]oney\s+[Rr]eceived\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Pp]aid\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Aa]mount[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
@@ -586,7 +590,7 @@ def get_acct(sender, body, amt):
     elif re.search(r'transfer(?:red)?\s+to\s+(?:your\s+)?(?:a/c|account)', bl2):
         info["direction"] = "Received"
     elif re.search(r'transfer(?:red)?\s+to\b', bl2):
-        info["direction"] = "Received"
+        info["direction"] = "Sent"    # money left the account → Sent
     elif re.search(r'transfer(?:red)?\s+from\b', bl2):
         info["direction"] = "Sent"
     elif re.search(r'deposited\s+(?:from|to\s+your)', bl2):
@@ -787,9 +791,19 @@ def generate_html(sms_list, stats, out_path, tn=""):
         amt_tag=(f'<span class="amt-tag" style="background:{bdr}">💰 Tk {s["amount"]:,.2f}</span>'
                  if s["amount"]>=TIER_SMALL else "")
         tier_badge=(f'<span class="rbadge" style="background:{bdr}">{TIER_EN_LBL.get(t,"")}</span>' if t else "")
+        # MFS/Bank SMS: body-detected direction সবচেয়ে নির্ভরযোগ্য (SMSMT সব notification-এই আসে)
+        _stype = s.get("sender_type","")
+        _acct_dir = ai.get("direction","") if ai else ""
+        if _stype in ("mfs","bank") and _acct_dir:
+            _eff_dir = "IN" if _acct_dir=="Received" else "OUT"
+        elif direction=="SMSMT":  _eff_dir = "IN"
+        elif direction=="SMSMO":  _eff_dir = "OUT"
+        elif _acct_dir=="Received": _eff_dir = "IN"
+        elif _acct_dir=="Sent":     _eff_dir = "OUT"
+        else: _eff_dir = ""
         dir_badge=""
-        if direction=="SMSMT": dir_badge='<span class="dir-in">● IN</span>'
-        elif direction=="SMSMO": dir_badge='<span class="dir-out">● OUT</span>'
+        if _eff_dir=="IN":  dir_badge='<span class="dir-in">● IN</span>'
+        elif _eff_dir=="OUT": dir_badge='<span class="dir-out">● OUT</span>'
         acct_mini=""
         if ai and ai.get("service"):
             pts=[]
@@ -1116,7 +1130,10 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
 
 def generate_docx(results, stats, tn=""):
     """results → Word (.docx) bytes (python-docx).
-    Message body preserved as-is; all other text in English."""
+    - Clean light-coloured table headers (no dark background)
+    - If tn set: Section 3 = all SMS, Section 4 = target number SMS separately
+    - Message body preserved as-is; all other text in English.
+    """
     from docx import Document as WDoc
     from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -1137,66 +1154,142 @@ def generate_docx(results, stats, tn=""):
     def _rgb(h): return RGBColor(int(h[0:2],16),int(h[2:4],16),int(h[4:6],16))
 
     def _shd(cell, fill):
-        tc = cell._tc; tcPr = tc.get_or_add_tcPr()
-        shd = OxmlElement('w:shd')
+        tc=cell._tc; tcPr=tc.get_or_add_tcPr()
+        shd=OxmlElement('w:shd')
         shd.set(qn('w:val'),'clear'); shd.set(qn('w:color'),'auto')
-        shd.set(qn('w:fill'), fill); tcPr.append(shd)
+        shd.set(qn('w:fill'),fill); tcPr.append(shd)
 
     def _brd(cell, color="CCCCCC"):
-        tc = cell._tc; tcPr = tc.get_or_add_tcPr()
-        tcB = OxmlElement('w:tcBorders')
+        tc=cell._tc; tcPr=tc.get_or_add_tcPr()
+        tcB=OxmlElement('w:tcBorders')
         for side in ('top','left','bottom','right'):
-            el = OxmlElement(f'w:{side}')
+            el=OxmlElement(f'w:{side}')
             el.set(qn('w:val'),'single'); el.set(qn('w:sz'),'4')
             el.set(qn('w:space'),'0'); el.set(qn('w:color'),color)
             tcB.append(el)
         tcPr.append(tcB)
 
     def _run(para, text, bold=False, italic=False, size=10, color="111111"):
-        r = para.add_run(str(text or ""))
+        r=para.add_run(str(text or ""))
         r.bold=bold; r.italic=italic
         r.font.name="Arial"; r.font.size=Pt(size)
         r.font.color.rgb=_rgb(color); return r
 
     def _cell(tbl_row, col_idx, text, width_cm, bold=False, italic=False,
               size=10, color="111111", fill="FFFFFF",
-              align=WD_ALIGN_PARAGRAPH.LEFT, valign=WD_ALIGN_VERTICAL.TOP, brd_col="CCCCCC"):
-        c = tbl_row.cells[col_idx]
-        c.width = Cm(width_cm)
-        _shd(c, fill); _brd(c, brd_col)
-        c.vertical_alignment = valign
-        p = c.paragraphs[0]; p.clear(); p.alignment = align
-        _run(p, text, bold=bold, italic=italic, size=size, color=color)
+              align=WD_ALIGN_PARAGRAPH.LEFT, brd_col="CCCCCC"):
+        c=tbl_row.cells[col_idx]; c.width=Cm(width_cm)
+        _shd(c,fill); _brd(c,brd_col)
+        c.vertical_alignment=WD_ALIGN_VERTICAL.TOP
+        p=c.paragraphs[0]; p.clear(); p.alignment=align
+        _run(p,text,bold=bold,italic=italic,size=size,color=color)
 
-    doc = WDoc()
-    sec = doc.sections[0]
+    def _sec_heading(doc, num, title):
+        """Clean section heading — no background, just bold text with red accent."""
+        p=doc.add_paragraph()
+        p.paragraph_format.space_before=Pt(14); p.paragraph_format.space_after=Pt(5)
+        _run(p,f"{num}. ",bold=True,size=14,color="C0392B")
+        _run(p,title,bold=True,size=14,color="1A1A2E")
+        # thin red underline
+        pPr=p._p.get_or_add_pPr(); pBdr=OxmlElement('w:pBdr')
+        bot=OxmlElement('w:bottom'); bot.set(qn('w:val'),'single')
+        bot.set(qn('w:sz'),'4'); bot.set(qn('w:space'),'1'); bot.set(qn('w:color'),'C0392B')
+        pBdr.append(bot); pPr.append(pBdr)
+
+    def _tbl_hdr_cell(tbl_row, col_idx, text, width_cm):
+        """Clean light-blue header cell — no dark background."""
+        _cell(tbl_row, col_idx, text, width_cm,
+              bold=True, size=9, color="1A1A2E",
+              fill="D6E4F0",   # light steel blue
+              align=WD_ALIGN_PARAGRAPH.CENTER, brd_col="7FB3D3")
+
+    def _msg_type(r):
+        ai=r.get("acct",{})
+        sdir=r.get("direction","")
+        stype=r.get("sender_type","")
+        # MFS/Bank SMS: body থেকে detected direction সবচেয়ে নির্ভরযোগ্য
+        # কারণ MFS notification সব সময় SMSMT হয় — operator নিজে পাঠায়
+        if stype in ("mfs","bank") and ai.get("direction"):
+            return "IN" if ai["direction"]=="Received" else "OUT"
+        # Personal SMS বা CDR direction স্পষ্ট
+        if sdir=="SMSMT" and not ai.get("direction"):  return "IN"
+        if sdir=="SMSMO" and not ai.get("direction"):  return "OUT"
+        if ai.get("direction")=="Received": return "IN"
+        if ai.get("direction")=="Sent":     return "OUT"
+        if sdir=="SMSMT": return "IN"
+        if sdir=="SMSMO": return "OUT"
+        return "—"
+
+    def _remarks(r):
+        ai=r.get("acct",{}); rems=[]
+        if ai.get("service"):  rems.append(ai["service"])
+        if r["amount"]>=10000: rems.append(f"Tk {r['amount']:,.0f}")
+        if ai.get("trx_id"):   rems.append(f"TrxID: {ai['trx_id']}")
+        if ai.get("balance"):  rems.append(f"Bal: {ai['balance']:,.0f}")
+        cats=[c for c in r.get("categories",[]) if c!="bank_info"]
+        cat_s=", ".join(CAT_LABEL.get(c,c) for c in cats)
+        if cat_s: rems.append(cat_s)
+        return " | ".join(rems)
+
+    def _write_sms_table(doc, msg_list):
+        """Write SMS messages table with given list."""
+        if not msg_list:
+            p=doc.add_paragraph(); _run(p,"No records found.",italic=True,size=9,color="888888")
+            return
+        mH=["SL","B Party (Sender)","Date / Time","Type (In/Out)","Full Message (Body)","Remarks"]
+        mW=[0.8, 2.5, 2.5, 1.4, 8.0, 2.8]   # total ~18cm
+        mt=doc.add_table(rows=1+len(msg_list),cols=6)
+        mt.alignment=WD_TABLE_ALIGNMENT.LEFT
+        for j,(h,w) in enumerate(zip(mH,mW)):
+            _tbl_hdr_cell(mt.rows[0],j,h,w)
+        for idx,r in enumerate(msg_list):
+            mtype=_msg_type(r)
+            t2=r.get("tier","")
+            rbg={"high":"FEF2F2","med":"FFF5F5","small":"FFFBF0"}.get(t2,"FFFFFF" if idx%2==0 else "F7F7F7")
+            tbg="E8F5EE" if mtype=="IN" else ("FFF0F0" if mtype=="OUT" else rbg)
+            tcol="1A7A4A" if mtype=="IN" else ("CC2200" if mtype=="OUT" else "666666")
+            row=mt.rows[idx+1]
+            data=[
+                (str(idx+1),    "555555", WD_ALIGN_PARAGRAPH.CENTER, rbg,  True,  8),
+                (r["sender"],   "1A4A8A", WD_ALIGN_PARAGRAPH.LEFT,   rbg,  True,  8),
+                (str(r.get("date",""))[:16], "444444", WD_ALIGN_PARAGRAPH.LEFT, rbg, False, 7.5),
+                (mtype,         tcol,     WD_ALIGN_PARAGRAPH.CENTER, tbg,  True,  9),
+                (r["body"],     "111111", WD_ALIGN_PARAGRAPH.LEFT,   rbg,  False, 8.5),
+                (_remarks(r),   "333333", WD_ALIGN_PARAGRAPH.LEFT,   rbg,  False, 8),
+            ]
+            for j,(v,c,a,bg,bd,fs) in enumerate(data):
+                _cell(row,j,v,mW[j],bold=bd,size=fs,color=c,fill=bg,align=a)
+
+    # ── Build doc ──────────────────────────────────────────────
+    doc=WDoc()
+    sec=doc.sections[0]
     sec.page_width=Cm(21); sec.page_height=Cm(29.7)
     sec.left_margin=sec.right_margin=Cm(1.5)
     sec.top_margin=sec.bottom_margin=Cm(1.8)
 
     # Header
-    hp = sec.header.paragraphs[0]; hp.clear()
+    hp=sec.header.paragraphs[0]; hp.clear()
     _run(hp,"SMS INTELLIGENCE REPORT",bold=True,size=9,color="1A1A2E")
     _run(hp,f"   |   Target: {tn}" if tn else "",size=9,color="555555")
     _run(hp,"   |   CONFIDENTIAL",bold=True,size=9,color="C0392B")
     hp.paragraph_format.space_after=Pt(2)
     pPr=hp._p.get_or_add_pPr(); pBdr=OxmlElement('w:pBdr')
-    bot=OxmlElement('w:bottom'); bot.set(qn('w:val'),'single')
-    bot.set(qn('w:sz'),'6'); bot.set(qn('w:space'),'1'); bot.set(qn('w:color'),'C0392B')
-    pBdr.append(bot); pPr.append(pBdr)
+    bot2=OxmlElement('w:bottom'); bot2.set(qn('w:val'),'single')
+    bot2.set(qn('w:sz'),'6'); bot2.set(qn('w:space'),'1'); bot2.set(qn('w:color'),'C0392B')
+    pBdr.append(bot2); pPr.append(pBdr)
 
     # Footer
-    fp = sec.footer.paragraphs[0]; fp.clear()
+    fp=sec.footer.paragraphs[0]; fp.clear()
     _run(fp,"CDR Forensic Analysis  |  Bangladesh Law Enforcement  |  CONFIDENTIAL",size=8,color="888888")
     fp.paragraph_format.space_before=Pt(2)
     pPr2=fp._p.get_or_add_pPr(); pBdr2=OxmlElement('w:pBdr')
-    top2=OxmlElement('w:top'); top2.set(qn('w:val'),'single')
-    top2.set(qn('w:sz'),'6'); top2.set(qn('w:space'),'1'); top2.set(qn('w:color'),'C0392B')
-    pBdr2.append(top2); pPr2.append(pBdr2)
+    top3=OxmlElement('w:top'); top3.set(qn('w:val'),'single')
+    top3.set(qn('w:sz'),'6'); top3.set(qn('w:space'),'1'); top3.set(qn('w:color'),'C0392B')
+    pBdr2.append(top3); pPr2.append(pBdr2)
 
     from datetime import datetime as _dt
-    now_str = _dt.now().strftime("%d %B %Y, %I:%M %p")
-    display_count = sum(1 for r in results if "bank_info" not in r.get("categories",[]))
+    now_str=_dt.now().strftime("%d %B %Y, %I:%M %p")
+    disp=[r for r in results if "bank_info" not in r.get("categories",[])]
 
     # ── Cover ──────────────────────────────────────────────────
     p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER
@@ -1206,10 +1299,14 @@ def generate_docx(results, stats, tn=""):
     p2.paragraph_format.space_after=Pt(16)
     _run(p2,"Forensic SMS Analysis Dashboard — CDR Intelligence",italic=True,size=12,color="555555")
 
-    info_rows=[("Target Number",tn or "—"),("Total SMS in File",str(stats["total"])),
-               ("After Dedup / Merge",str(stats["after_merge"])),
-               ("Operator Filtered",str(stats["filtered"])),
-               ("Identified / Shown",str(display_count)),("Report Generated",now_str)]
+    info_rows=[
+        ("Target Number",       tn or "All Numbers"),
+        ("Total SMS in File",   str(stats["total"])),
+        ("After Dedup / Merge", str(stats["after_merge"])),
+        ("Operator Filtered",   str(stats["filtered"])),
+        ("Identified / Shown",  str(len(disp))),
+        ("Report Generated",    now_str),
+    ]
     t0=doc.add_table(rows=len(info_rows),cols=2); t0.alignment=WD_TABLE_ALIGNMENT.CENTER
     for i,(lbl,val) in enumerate(info_rows):
         bg="EEF2FF" if i%2==0 else "FFFFFF"
@@ -1218,15 +1315,12 @@ def generate_docx(results, stats, tn=""):
     doc.add_paragraph().paragraph_format.space_after=Pt(4)
 
     # ── Section 1: Bank/MFS Summary ────────────────────────────
-    h1=doc.add_paragraph(); h1.paragraph_format.space_before=Pt(14); h1.paragraph_format.space_after=Pt(4)
-    _run(h1,"1. MFS / Bank Transaction Summary",bold=True,size=14,color="1A1A2E")
+    _sec_heading(doc,"1","MFS / Bank Transaction Summary")
     bank_summ=build_bank_summary(results)
     bH=["Bank / MFS Service","Txn Count","Total Received (IN)","Total Sent (OUT)","Max Transaction","Last Balance"]
     bW=[4.0,2.0,3.0,3.0,3.0,3.0]
     bt=doc.add_table(rows=1+len(bank_summ)+1,cols=6); bt.alignment=WD_TABLE_ALIGNMENT.LEFT
-    for j,(h,w) in enumerate(zip(bH,bW)):
-        _cell(bt.rows[0],j,h,w,bold=True,size=9,color="FFFFFF",fill="1A1A2E",
-              align=WD_ALIGN_PARAGRAPH.CENTER,brd_col="555555")
+    for j,(h,w) in enumerate(zip(bH,bW)): _tbl_hdr_cell(bt.rows[0],j,h,w)
     fmt=lambda n: f"Tk {n:,.0f}" if n>0 else "—"
     ti=to=0
     for idx,(svc,d) in enumerate(bank_summ.items()):
@@ -1234,42 +1328,40 @@ def generate_docx(results, stats, tn=""):
         bg="FFFFFF" if idx%2==0 else "F5F5F5"
         row=bt.rows[idx+1]
         vals=[svc,str(d["txn_count"]),fmt(d["total_in"]),fmt(d["total_out"]),fmt(d["max_txn"]),fmt(d["last_balance"])]
-        cols=["1A1A2E","111111","1A7A4A","CC2200","7A5A00","1A4A8A"]
+        clrs=["1A1A2E","444444","1A7A4A","CC2200","7A5A00","1A4A8A"]
         alns=[WD_ALIGN_PARAGRAPH.LEFT,WD_ALIGN_PARAGRAPH.CENTER,
               WD_ALIGN_PARAGRAPH.RIGHT,WD_ALIGN_PARAGRAPH.RIGHT,
               WD_ALIGN_PARAGRAPH.RIGHT,WD_ALIGN_PARAGRAPH.RIGHT]
-        for j in range(6):
-            _cell(row,j,vals[j],bW[j],bold=(j==0),size=9,color=cols[j],fill=bg,align=alns[j])
+        for j in range(6): _cell(row,j,vals[j],bW[j],bold=(j==0),size=9,color=clrs[j],fill=bg,align=alns[j])
         ti+=d["total_in"]; to+=d["total_out"]
+    # Total row — light green/red background instead of dark
     tr=bt.rows[-1]
-    for j,(v,c,a) in enumerate(zip(
-        ["TOTAL","—",fmt(ti),fmt(to),"—","—"],
-        ["FFFFFF","FFFFFF","90EE90","FFB3B3","FFFFFF","FFFFFF"],
-        [WD_ALIGN_PARAGRAPH.CENTER,WD_ALIGN_PARAGRAPH.CENTER,
+    for j,(v,c,a,bg) in enumerate(zip(
+        ["TOTAL (ALL SERVICES)","—",fmt(ti),fmt(to),"—","—"],
+        ["1A1A2E","666666","1A7A4A","CC2200","666666","666666"],
+        [WD_ALIGN_PARAGRAPH.LEFT,WD_ALIGN_PARAGRAPH.CENTER,
          WD_ALIGN_PARAGRAPH.RIGHT,WD_ALIGN_PARAGRAPH.RIGHT,
-         WD_ALIGN_PARAGRAPH.CENTER,WD_ALIGN_PARAGRAPH.CENTER]
+         WD_ALIGN_PARAGRAPH.CENTER,WD_ALIGN_PARAGRAPH.CENTER],
+        ["EEF2FF","EEF2FF","E8F5EE","FFF0F0","EEF2FF","EEF2FF"]
     )):
-        _cell(tr,j,v,bW[j],bold=True,size=9,color=c,fill="1A1A2E",align=a,brd_col="333333")
+        _cell(tr,j,v,bW[j],bold=True,size=9,color=c,fill=bg,align=a,brd_col="AAAAAA")
     doc.add_paragraph().paragraph_format.space_after=Pt(2)
 
     # ── Section 2: Tier Breakdown ───────────────────────────────
-    h2=doc.add_paragraph(); h2.paragraph_format.space_before=Pt(12); h2.paragraph_format.space_after=Pt(4)
-    _run(h2,"2. Transaction Tier Breakdown",bold=True,size=14,color="1A1A2E")
+    _sec_heading(doc,"2","Transaction Tier Breakdown")
     tiers=[("High (100K+)","txn_high","991B1B","FEF2F2"),
            ("Medium (50K-100K)","txn_med","DC2626","FFF5F5"),
            ("Small (10K-50K)","txn_small","EA580C","FFFBF0")]
-    tH=["Tier","Count","IN Count","OUT Count","Unknown Direction"]
+    tH=["Tier","Total Count","IN (Received)","OUT (Sent)","Direction Unknown"]
     tW=[4.5,2.0,3.0,3.0,3.5]
     tt=doc.add_table(rows=1+len(tiers),cols=5); tt.alignment=WD_TABLE_ALIGNMENT.LEFT
-    for j,(h,w) in enumerate(zip(tH,tW)):
-        _cell(tt.rows[0],j,h,w,bold=True,size=9,color="FFFFFF",fill="1A1A2E",
-              align=WD_ALIGN_PARAGRAPH.CENTER,brd_col="555555")
+    for j,(h,w) in enumerate(zip(tH,tW)): _tbl_hdr_cell(tt.rows[0],j,h,w)
     for idx,(lbl,key,col,bg) in enumerate(tiers):
         msgs=[r for r in results if key in r.get("categories",[])]
-        ins =sum(1 for r in msgs if r.get("acct",{}).get("direction")=="Received" or r.get("direction")=="SMSMT")
-        outs=sum(1 for r in msgs if r.get("acct",{}).get("direction")=="Sent"     or r.get("direction")=="SMSMO")
+        ins =sum(1 for r in msgs if _msg_type(r)=="IN")
+        outs=sum(1 for r in msgs if _msg_type(r)=="OUT")
         unk =max(len(msgs)-ins-outs,0)
-        row =tt.rows[idx+1]
+        row=tt.rows[idx+1]
         for j,(v,c,a) in enumerate(zip(
             [lbl,str(len(msgs)),str(ins),str(outs),str(unk)],
             [col,col,"1A7A4A","CC2200","888888"],
@@ -1278,46 +1370,33 @@ def generate_docx(results, stats, tn=""):
             _cell(row,j,v,tW[j],bold=(j==0),size=9,color=c,fill=bg,align=a)
     doc.add_paragraph().paragraph_format.space_after=Pt(2)
 
-    # ── Section 3: SMS Messages Table ──────────────────────────
-    h3=doc.add_paragraph(); h3.paragraph_format.space_before=Pt(14); h3.paragraph_format.space_after=Pt(4)
-    _run(h3,"3. Important SMS Messages",bold=True,size=14,color="1A1A2E")
-    disp=[r for r in results if "bank_info" not in r.get("categories",[])]
-    mH=["SL","B Party (Sender)","Date / Time","Type\n(In/Out)","Full Message (Body)","Remarks"]
-    mW=[0.8,2.5,2.5,1.2,8.0,3.0]
-    mt=doc.add_table(rows=1+len(disp),cols=6); mt.alignment=WD_TABLE_ALIGNMENT.LEFT
-    for j,(h,w) in enumerate(zip(mH,mW)):
-        _cell(mt.rows[0],j,h,w,bold=True,size=8,color="FFFFFF",fill="1A1A2E",
-              align=WD_ALIGN_PARAGRAPH.CENTER,brd_col="555555")
-    for idx,r in enumerate(disp):
-        ai=r.get("acct",{})
-        sdir=r.get("direction","")
-        if   sdir=="SMSMT":               mtype="IN"
-        elif sdir=="SMSMO":               mtype="OUT"
-        elif ai.get("direction")=="Received": mtype="IN"
-        elif ai.get("direction")=="Sent":     mtype="OUT"
-        else:                             mtype="—"
-        t2=r.get("tier","")
-        rbg={"high":"FEF2F2","med":"FFF5F5","small":"FFFBF0"}.get(t2,"FFFFFF" if idx%2==0 else "F5F5F5")
-        tbg="E8F5EE" if mtype=="IN" else ("FEF2F2" if mtype=="OUT" else rbg)
-        tcol="1A7A4A" if mtype=="IN" else ("CC2200" if mtype=="OUT" else "555555")
-        cats=[c for c in r.get("categories",[]) if c!="bank_info"]
-        rems=[]
-        if ai.get("service"):    rems.append(ai["service"])
-        if r["amount"]>=10000:   rems.append(f"Tk {r['amount']:,.0f}")
-        if ai.get("trx_id"):     rems.append(f"TrxID: {ai['trx_id']}")
-        if ai.get("balance"):    rems.append(f"Bal: {ai['balance']:,.0f}")
-        cat_s=", ".join(CAT_LABEL.get(c,c) for c in cats)
-        if cat_s: rems.append(cat_s)
-        remarks=" | ".join(rems)
-        row=mt.rows[idx+1]
-        data=[(str(idx+1),"1A1A2E",WD_ALIGN_PARAGRAPH.CENTER,rbg,True,8),
-              (r["sender"],"1A4A8A",WD_ALIGN_PARAGRAPH.LEFT,rbg,True,8),
-              (str(r.get("date",""))[:16],"444444",WD_ALIGN_PARAGRAPH.LEFT,rbg,False,7.5),
-              (mtype,tcol,WD_ALIGN_PARAGRAPH.CENTER,tbg,True,9),
-              (r["body"],"111111",WD_ALIGN_PARAGRAPH.LEFT,rbg,False,8.5),
-              (remarks,"333333",WD_ALIGN_PARAGRAPH.LEFT,rbg,False,8)]
-        for j,(v,c,a,bg,bd,fs) in enumerate(data):
-            _cell(row,j,v,mW[j],bold=bd,size=fs,color=c,fill=bg,align=a)
+    # ── Section 3: All SMS Messages ─────────────────────────────
+    _sec_heading(doc,"3","Important SMS Messages — All")
+    _write_sms_table(doc, disp)
+
+    # ── Section 4: Target Number SMS (only if tn provided) ──────
+    if tn:
+        doc.add_paragraph().paragraph_format.space_after=Pt(6)
+        _sec_heading(doc,"4",f"SMS Related to Target Number: {tn}")
+        tn_clean=re.sub(r'[^\d]','',tn)
+        tn_variants={tn_clean}
+        if tn_clean.startswith('01'): tn_variants.add('880'+tn_clean)
+        if tn_clean.startswith('880') and len(tn_clean)>=13: tn_variants.add(tn_clean[3:])
+        def _is_tn(r):
+            sd=re.sub(r'[^\d]','',str(r.get("sender","")))
+            bd=r.get("body","")
+            ai=r.get("acct",{})
+            on=re.sub(r'[^\d]','',str(ai.get("other_number","")))
+            return (any(v in sd for v in tn_variants)
+                    or any(v in on for v in tn_variants)
+                    or any(v in bd for v in tn_variants))
+        tn_msgs=[r for r in disp if _is_tn(r)]
+        note=doc.add_paragraph()
+        note.paragraph_format.space_after=Pt(4)
+        _run(note,f"Showing {len(tn_msgs)} SMS records related to {tn}  |  ",size=9,color="555555",italic=True)
+        _run(note,"This section includes SMS where the target number appears as sender, recipient, or in message body.",
+             size=9,color="888888",italic=True)
+        _write_sms_table(doc,tn_msgs)
 
     buf=io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf.getvalue()
