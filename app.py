@@ -1,6 +1,6 @@
 import streamlit as st
 import tempfile, os, re, base64
-from sms_analyzer import process_file
+from sms_analyzer import process_file, generate_docx
 
 st.set_page_config(
     page_title="SMS Intelligence Dashboard",
@@ -393,9 +393,34 @@ if analyze_btn:
                     mime="text/html",
                     use_container_width=True,
                 )
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+            # ── DOCX Download ──────────────────────────────────
+            try:
+                _stats = {"total":result.get("total_sms",0),
+                          "after_merge":result.get("after_merge",0),
+                          "filtered":result.get("filtered",0)}
+                docx_bytes = generate_docx(
+                    result.get("_results",[]),
+                    result.get("_stats", _stats),
+                    result.get("_tn", result.get("target_number",""))
+                )
+                dl_name_docx = dl_name.replace(".html", ".docx")
+                c1d,c2d,c3d = st.columns([1,2,1])
+                with c2d:
+                    st.download_button(
+                        label="⬇️   Download Word (.docx) Report",
+                        data=docx_bytes,
+                        file_name=dl_name_docx,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True,
+                    )
+            except Exception as docx_err:
+                st.warning(f"⚠️ Word report could not be generated: {docx_err}")
+
             st.markdown("""
             <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
-              ℹ️ The HTML report also contains a built-in Download button for offline saving.
+              ℹ️ Word report includes: Cover page, Bank/MFS Summary, Tier Breakdown, and full SMS message table.
             </div>""", unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
