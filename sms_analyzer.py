@@ -193,8 +193,9 @@ NAMED_PROMO_SENDERS = {
     'artisan',                                        # real estate brand
     'mirror', 'mirrorfashion',                        # fashion brand
     'best deal', 'best_deal', 'dhamakadeal',          # telecom promo
-    'goongoon', 'jhotpotloan',                        # telecom promo
-    'udvash',                                         # coaching center promo (not OTP)
+    'aryan city', 'aryancity',                       # real estate
+    'tuitionmate', 'tutorclub', 'tutorhunt',          # tutor platforms
+    'manyavar bd', 'manyavar',                        # fashion brand
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -422,7 +423,43 @@ SKIP_BODY_RE = re.compile(
     r"|(?:খালেদা\s*জিয়া|বিএনপি|আওয়ামী).*(?:গণতন্ত্র|মুক্তি|আন্দোলন)"
 
     # ── এই CDR থেকে চিহ্নিত নতুন patterns ──────────────────────────────────
-    # Shwapno / grocery price list (গরু ৭৪৮* ইলিশ ২৩৮* format)
+    # মাসিক কিস্তিতে প্লট/ফ্ল্যাট promo
+    r"|মাসিক\s+কিস্তিতে\s+(?:প্লট|ফ্ল্যাট|plot|flat)"
+    r"|[\d,]+\s*টাকা\s+মাসিক\s+কিস্তি"
+    r"|কিস্তি\s+দিলেই\s+বুকিং|ডাউনপেমেন্টের\s+নেই\s+ভয়"
+    # Tutor promo — Bengali & English variants
+    r"|(?:টিউটর|tutor)\s+পেতে\s+(?:কল|call)\s+করুন"
+    r"|(?:হোম|home)\s+টিউটর.*(?:কলঃ|কল:|01\d{9})"
+    r"|(?:home|হোম)\s+tutor\s+পেতে\s+(?:call|কল)"
+    r"|do\s+you\s+need\s+(?:home|hom)\s+tutor"
+    r"|ফ্রি\s+ক্লাস.*(?:টিউটর|tutor)"
+    r"|অনলাইন.*(?:যেকোনো\s+বিষয়|বিষয়ের).*(?:অভিজ্ঞ|শিক্ষক).*(?:কল|01\d{9})"
+    r"|tutorclubsite|tuitionmate|tutorhunt"
+    # Matrimony promo
+    r"|পাত্র.*পাত্রী.*(?:খুজুন|খুঁজুন|সন্ধান)"
+    r"|পাত্র\s+পাত্রি\s+(?:খুজুন|খুঁজুন)"
+    r"|(?:বিশ্বস্ত|প্রাইভেসি\s+বজায়).*পাত্র.*(?:যোগাযোগ|contact)"
+    # Gems govt portal OTP (government employee system)
+    r"|gems\s+password\s+reset\s+otp|gems\.gov\.bd"
+    # FDR/investment personal solicitation
+    r"|any\s+new\s+personal\s+investment|invest.*now.*fixed\s+deposit"
+    r"|dear\s+sir.*opportunity\s+to\s+invest.*fixed\s+dep"
+    # Fogger/lawnmower/equipment promo
+    r"|fogger\s+machine|lawnmower|carwasher.*(?:chainsaw|chemical)"
+    r"|chainsaw.*(?:chemical|contact|01\d{9})"
+    # MRF steel / building systems solicitation
+    r"|mrf\s+steel|building\s+systems.*(?:rcc|steel).*(?:develop|construct)"
+    # DTBA/club death notice (mass SMS)
+    r"|dtba\s+(?:news|member).*(?:passed\s+away|ইন্তেকাল)"
+    # cutt.ly / short promo links (personal BD number থেকে channel/content promo)
+    r"|(?<!\w)cutt\.ly/\w+|rb\.gy/\w+"
+    # টিউটর খুঁজছেন (present tense — different from পেতে কল করুন)
+    r"|(?:টিউটর|tutor).*(?:খুঁজছেন|খুজছেন|looking\s+for\s+tutor)"
+    r"|(?:সন্তানের\s+জন্য\s+টিউটর|আপনার\s+সন্তানের.*টিউটর)"
+    # নিবেদিতপ্রাণ চ্যানেল (dedicated YouTube/social channel promo)
+    r"|নিবেদিতপ্রাণ.*চ্যানেল|dedicated.*channel.*(?:cutt\.ly|bit\.ly|subscribe)"
+    # Club/org event invitation (mass SMS repeated from personal BD number)
+    r"|সম্মানিত\s+সদস্য.*(?:উপলক্ষে|অনুষ্ঠান|আমন্ত্রিত|কুপন|অংশগ্রহণ)"
     r"|(?:গরু|ইলিশ|মিনিকেট|চিনি)\s*\d+\*"
     # ARTISAN / real estate brand promo
     r"|\[ARTISAN\]|artisan.*(?:flat|ফ্ল্যাট).*(?:%|ছাড়|discount)"
@@ -606,15 +643,34 @@ def merge(sms_list):
                 cur_body = body  # accumulated so far
                 nx_body  = nx["body"]
 
-                # OTP আর transaction আলাদা রাখো
+                # ★ FIX 1: OTP body → কখনো merge করা যাবে না
+                # প্রতিটা OTP আলাদা — একই sender থেকে একই সময়ে ভিন্ন OTP আসতে পারে
                 cur_is_otp = bool(OTP_BODY_RE.search(cur_body))
                 nx_is_otp  = bool(OTP_BODY_RE.search(nx_body))
-                if cur_is_otp != nx_is_otp:
+                if cur_is_otp or nx_is_otp:
                     break
 
-                # ★ CORE FIX: যদি current accumulated body-ই complete
-                # (balance/TrxID আছে) তাহলে পরেরটা আলাদা transaction — merge করো না
+                # ★ FIX 2: current body complete হলে পরেরটা আলাদা SMS
                 if BANK_COMPLETE_RE.search(cur_body):
+                    break
+
+                # ★ FIX 3: SCHOLASTICA/service SMS — একটা complete part-এর শেষ চিহ্ন
+                # যদি cur_body শেষ হয় ।/!/? দিয়ে → complete sentence → merge না
+                # কিন্তু multi-part SMS-এ প্রথম part মাঝখানে কেটে যায়
+                # সঠিক heuristic: যদি cur_body ≥ 100 char AND শেষ char পরিচিত ending দিয়ে শেষ
+                # তাহলে complete SMS → merge করো না
+                if (len(cur_body.strip()) >= 100
+                        and cur_body.strip()[-1] in '.!?।'
+                        and not cur_body.strip().endswith('...')):
+                    break
+
+                # ★ FIX 4: next body নতুন SMS শুরু হওয়ার স্পষ্ট চিহ্ন দিলে merge করো না
+                # "প্রিয়/সম্মানিত/Dear/আমাদের" দিয়ে শুরু = নতুন independent SMS
+                if re.match(
+                    r'^(?:প্রিয়|সম্মানিত|আপনার|আমাদের|বিজ্ঞপ্তি|'
+                    r'dear\s|urgent|notice|important\s|greetings)',
+                    nx_body.strip(), re.I
+                ):
                     break
 
                 body += " " + nx_body
@@ -678,8 +734,8 @@ TXN_P = [
     r'[Rr]eceived\s+([\d,]+\.?\d*)\s*[Tt]k\b',
     # IBBL CellFin / IBBPLC: "Deposit Amount: 100,000.00"
     r'[Dd]eposit\s+[Aa]mount\s*:\s*([\d,]+\.?\d*)',
-    # bKash Pay Bill / Payment: "request of Tk X" / "payment of Tk X"
-    r'[Rr]equest\s+of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    # bKash Interest / savings return
+    r'bkash.e\s+[Tt]k\s*([\d,]+\.?\d*)\s+interest\s+peyechhen',
     # MetLife: "BDT** 11377.00" (asterisks between BDT and amount)
     r'BDT\s*\*+\s*([\d,]+\.?\d*)',
     # Bangla taka sign ৳ — MetLife IDRAMETLIFE: "৳১১৩৭৭.০০"
@@ -1151,7 +1207,8 @@ def get_acct(sender, body, amt):
         info["direction"] = "Received"
     # Priority 5: MFS & general keywords (including Bangla)
     elif re.search(r'\breceived\b|\bcash\s*in\b|\bdeposit(?:ed)?\b|\bsalary\b'
-                   r'|পেয়েছেন|ক্যাশ\s*ইন|জমা\s*হয়েছে', bl2):
+                   r'|পেয়েছেন|ক্যাশ\s*ইন|জমা\s*হয়েছে'
+                   r'|interest\s+peyechhen|interest\s+পেয়েছেন', bl2):
         info["direction"] = "Received"
     elif re.search(r'\bcash\s*out\b|\bpurchase\b|\bpos\s+purchase\b'
                    r'|\bpayment\s+of\b|\bpaid\b|\bsend\s+money\b|\bsent\b'
@@ -1897,6 +1954,7 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
 
     merged_ = merge(raw)
     filtered_cnt = 0; results = []; seen_keyed = set(); seen_body_only = set()
+    seen_full_body = set()  # global body dedup — club/org mass SMS retry এড়াতে
     for item in merged_:
         if not item["body"].strip(): continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
@@ -1907,7 +1965,6 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
         _st = stype(item["sender"], body_key)
         if _st in ("foreign_bank", "service", "other"):
             # foreign_bank/service/other: body-only dedup
-            # (GP retry করে hourly, timestamp ভিন্ন হয়)
             if body_key in seen_body_only: filtered_cnt+=1; continue
             seen_body_only.add(body_key)
         else:
@@ -1915,6 +1972,12 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
             dk = (item["sender"], body_key, dt_min)
             if dk in seen_keyed: filtered_cnt+=1; continue
             seen_keyed.add(dk)
+            # personal SMS global body dedup:
+            # একই exact body ভিন্ন সময়ে (club retry, mass SMS) → একবারই দেখাও
+            # ব্যতিক্রম: bank/mfs (same body = repeated txn confirmation, legitimately different)
+            if _st == "personal" and len(body_key) > 30:
+                if body_key in seen_full_body: filtered_cnt+=1; continue
+                seen_full_body.add(body_key)
         res = analyze_one(item["sender"], item["body"], item["date"], item.get("direction",""))
         if res:
             res["parts"] = item.get("parts",1)
