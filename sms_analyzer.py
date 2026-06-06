@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SMS Forensic Analyzer v10 — Bangladesh Law Enforcement
-তিন স্তরের লেনদেন + ব্যক্তিগত/সেবা SMS
+SMS Forensic Analyzer v12 — Bangladesh Law Enforcement
+তিন স্তরের লেনদেন + ব্যক্তিগত/সেবা SMS + বিদেশী ব্যাংক SMS
 """
-import openpyxl, re, html as hl, sys, os, csv
+import openpyxl, re, html as hl, sys, os, csv, io
 from datetime import datetime
 from collections import Counter
 
@@ -13,11 +13,66 @@ TIER_MED   = 50_000
 TIER_HIGH  = 100_000
 
 # ── BD নম্বর ────────────────────────────────────────────────
+# CDR export-এ "+880 17XXXXXXXX" বা "017-12345678" ফরম্যাটেও আসতে পারে
 BD_RE = re.compile(r'^\+?8801[3-9]\d{8}$|^01[3-9]\d{8}$')
-def is_bd(s): return bool(BD_RE.match(str(s).strip()))
+def is_bd(s):
+    # spaces ও hyphens সরিয়ে normalize করো, তারপর match করো
+    normalized = re.sub(r'[\s\-]', '', str(s).strip())
+    return bool(BD_RE.match(normalized))
 
 # ── Sender type ────────────────────────────────────────────
-MFS_KW    = ['bkash','b-kash','nagad','rocket','upay','mcash','tap','surecash']
+# ── বিদেশী ব্যাংক sender names ────────────────────────────
+# AlRajhi Malaysia, CIMB, Maybank, etc.
+FOREIGN_BANK_KW = [
+    'arj', 'alrajhi', 'al rajhi', 'al-rajhi',   # AlRajhi Bank Malaysia
+    'maybank', 'cimb', 'rhb bank', 'rhb',         # Malaysia banks
+    'public bank', 'hong leong',                   # Malaysia banks
+    'dbs bank', 'ocbc', 'uob',                     # Singapore banks
+    'hdfc', 'icici', 'sbi', 'axis bank',          # India banks
+    'emirates nbd', 'adcb', 'fab bank',           # UAE banks
+]
+
+FOREIGN_BANK_BODY_RE = re.compile(
+    r'\balrajhi\b|\bal\s*rajhi\b'
+    r'|maybank(?:\s+\w+)?:'
+    r'|cimb(?:\s+bank)?:'
+    r'|your\s+card\s+ending\s+\d{4}\s+(?:was\s+used|has\s+been)'
+    r'|(?:MYR|SGD|AED|INR|USD|GBP|EUR)\s*[\d,]+\.\d{2}\s+(?:was\s+made|spent|debited|charged)'
+    r'|spending\s+(?:MYR|SGD|AED|INR)\s*[\d,]+',
+    re.I
+)
+
+def is_foreign_bank(sender, body=''):
+    sl = str(sender).lower().strip()
+    if any(k in sl for k in FOREIGN_BANK_KW): return True
+    if body and FOREIGN_BANK_BODY_RE.search(body): return True
+    return False
+
+# ── বিদেশী মুদ্রা amount parser ───────────────────────────
+FOREIGN_AMT_RE = re.compile(
+    r'(?:MYR|SGD|AED|INR|USD|GBP|EUR)\s*([\d,]+\.?\d*)'
+    r'|spending\s+(?:MYR|SGD|AED|INR|USD)\s*([\d,]+\.?\d*)',
+    re.I
+)
+FOREIGN_CCY_RE = re.compile(r'(?<![A-Za-z])(MYR|SGD|AED|INR|USD|GBP|EUR)(?![A-Za-z])', re.I)
+
+def get_foreign_amount(body):
+    """বিদেশী মুদ্রার পরিমাণ বের করো।"""
+    for m in FOREIGN_AMT_RE.finditer(body):
+        v = m.group(1) or m.group(2)
+        try:
+            f = float(v.replace(',',''))
+            if f > 0: return f
+        except (ValueError, TypeError): pass
+    return 0.0
+
+def get_foreign_currency(body):
+    m = FOREIGN_CCY_RE.search(body)
+    return m.group(1).upper() if m else ''
+
+
+MFS_KW    = ['bkash','b-kash','nagad','rocket','upay','mcash','tap','surecash',
+             'binimoy','binimoypay']   # Bangladesh Bank interoperable MFS (চালু ২০২১)
 BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'trustbank','trust bank','trustcard',
              'sonali','janata bank','agrani bank','rupali bank',
@@ -27,10 +82,40 @@ BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'southeast bank','ab bank','ucb','hsbc','standard chartered',
              'ific','idlc','metlife','dutch-bangla','dutch bangla','dbbl',
              'nexuspay','nexus pay','sonali bank',
-             'standardbnk','standard bank','standard islami']
+             'standardbnk','standard bank','standard islami',
+             'dutchbangla',                                    # NexusPay/DBBL no-separator variant
+             'stanchart','stancharbd','stanchartbd',           # Standard Chartered BD
+             # ── মিসিং ইসলামি ব্যাংক (বাগ ৭) ──────────────────────
+             'al-arafah','al arafah','alarafah',            # Al-Arafah Islami Bank
+             'shahjalal','sjibl',                           # Shahjalal Islami Bank
+             'exim bank','eximbank','exim-bank',            # EXIM Bank (Islamic mode)
+             'first security','fsibl','fsib',               # First Security Islami Bank
+             'union bank','unionbank',                      # Union Bank (Islamic)
+             'global islami','globalislami',                # Global Islami Bank
+             # ── মিসিং বেসরকারি ব্যাংক (বাগ ৮) ───────────────────
+             'mercantile bank','mercanbank','mercentilebank', # Mercantile Bank
+             'one bank','onebank',                          # ONE Bank
+             'nrb bank','nrbbank','nrb commercial',         # NRB Bank / NRB Commercial
+             'midland bank','midlandbank',                  # Midland Bank
+             'community bank','communitybank',              # Community Bank Bangladesh
+             'padma bank','padmabank',                      # Padma Bank
+             'bangladesh commerce','bdcommerce',            # Bangladesh Commerce Bank
+             'jamuna bank','jamunabank',                    # Jamuna Bank
+             'modhumoti bank','modhumotibank',              # Modhumoti Bank
+             'shimanto bank','shimanto',                    # Shimanto Bank
+             'bengal commercial',                           # Bengal Commercial Bank
+             ]
 
 # Short-code senders that are actually banks (not to be filtered)
-BANK_SHORTCODES = {'16216', '16219', '16240', '16232'}
+BANK_SHORTCODES = {
+    # Bank shortcodes
+    '16216','16219','16240','16232',
+    # MFS shortcodes — bKash, Nagad, Rocket
+    '16247',   # bKash
+    '16167',   # Nagad
+    '16262',   # Rocket/DBBL
+    '26969',   # Upay
+}
 
 # Promotional / system numbers — সম্পূর্ণ filter
 PROMO_NUMBERS = {
@@ -54,13 +139,62 @@ PROMO_NUMBERS = {
     '8801847348716','01847348716',
     # Udvash coaching promo number
     '8809601775566','9601775566',
+    # ── v12 এ চিহ্নিত bulk BD promo/spam senders ──────────────
+    '8801575200164','01575200164',   # Phoenix Finance FDR promo
+    '8801511313043','01511313043',   # সোফা/পানির ট্যাংক/পোকামাকড় সার্ভিস
+    '8801771953770','01771953770',   # Zihad Security Services
+    '8801518915313','01518915313',   # IDLC FDR promo
+    '8801540651328','01540651328',   # Tutor/Tuition promo
+    '8801847348715','01847348715',   # রাজউক plot বিক্রয়
+    '8801897659713','01897659713',   # Nishat Linen sale
+    '8801969908192','01969908192',   # B2 clothing promo
+    '8801614298997','01614298997',   # Pista Choco Krunch food promo
+    '8801938838845','01938838845',   # Passport/citizenship promo
+    '8801819313319','01819313319',   # Electrical substation promo
+    '8801969900913','01969900913',   # Engineering promo
+    '8801974090800','01974090800',   # CVC Finance FDR promo
+    '8801969901227','01969901227',   # B2 clothing promo variant
+    '8801941642267','01941642267',   # Tour packages promo
+    '8801607707665','01607707665',   # Tourist Visa promo
+    '8801844160132','01844160132',   # Citizenship/immigration promo
+    '8801738771299','01738771299',   # IDLC FDR promo (personal number)
+    '8801715952838','01715952838',   # BiyeMedia matrimony
+    '8801871012645','01871012645',   # BiyeMedia matrimony variant
+    '8801979313319','01979313319',   # Electrical substation promo
+    '8801969906275','01969906275',   # Political campaign SMS
+    '8801552202766','01552202766',   # Political/religious appeal
+    '8809617611614','9617611614',    # Real estate (Wellcare Jolshiri)
+    '8809617611781','9617611781',    # FIFA/Visa promo
+    '8809601017265','9601017265',    # Purbachal plot promo
+    '8809648904099','9648904099',    # Restaurant promo (Teriyaki Boy)
+    # ── sample SMS থেকে চিহ্নিত ────────────────────────────────
+    '8801819399999','01819399999',   # StanChart sharetrip discount promo
+    '8801613322341','01613322341',   # Property management brokerage
+    '8809640910929','9640910929',    # Wellcare Greencity plot promo
+    '8809601017006','9601017006',    # Purbachal Wellcare plot promo (variant)
+    '8801540400015','01540400015',   # ৫তারকা হোটেল শেয়ার বিক্রয়
+    '8801537275871','01537275871',   # Land/property listing (=Katha>Purbachal)
+    '8801713002610','01713002610',   # UMCH property/land listing
 }
 
 # OTP sender names — always filter
 OTP_SENDERS = {
     'gp otp','gpotp','boesl','zipper',
     'nid otp','mygov otp','mygov',
-    'udvash',  # coaching promo
+}
+
+# Alpha/named senders যেগুলো সবসময় promo/spam — number নয়, নাম
+NAMED_PROMO_SENDERS = {
+    'diamndworld', 'diamond world', 'diamondworld',  # jewelry promo
+    'navana cond', 'navana',                          # real estate
+    'umch',                                           # property listing
+    'country',                                        # cattle/livestock
+    'prems clton', 'prems collection',                # fashion brand
+    'artisan',                                        # real estate brand
+    'mirror', 'mirrorfashion',                        # fashion brand
+    'best deal', 'best_deal', 'dhamakadeal',          # telecom promo
+    'goongoon', 'jhotpotloan',                        # telecom promo
+    'udvash',                                         # coaching center promo (not OTP)
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -68,15 +202,19 @@ SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chald
              'foodpanda','air astra','biman','us-bangla','novoair','ivac','ivac_bd',
              'epassportbd','epassport','walton','flexiload']
 
-def stype(sender):
+def stype(sender, body=''):
     sl = str(sender).lower().strip()
     s  = str(sender).strip()
     # Promotional numbers — filter out
     if s in PROMO_NUMBERS: return "promo"
     # Bank short-codes — always bank
     if s in BANK_SHORTCODES: return "bank"
-    # NexusPay/DBBL uses "[ ! ]" as sender
-    if s in ('[ ! ]', '[!]', '!'): return "bank" 
+    # NexusPay/DBBL — "[ ! ]", "[!]", "[ !]", "! " ইত্যাদি সব variant
+    if re.match(r'^\[?\s*!\s*\]?$', s): return "bank"
+    # NexusPay newer sender name variants — NEXUSPAY, DutchBangla (no separator)
+    if re.match(r'^nexuspay$|^nexus\s*pay$|^dutchbangla$', sl): return "bank"
+    # Foreign bank senders (AlRajhi MY, Maybank, CIMB, etc.)
+    if is_foreign_bank(sender, body): return "foreign_bank"
     # MTB. specific match
     if re.match(r'^mtb\.?\s*$', sl): return "bank"
     if any(m in sl for m in MFS_KW):  return "mfs"
@@ -89,12 +227,37 @@ def stype(sender):
 SC_RE = re.compile(r'^\d{4,8}$')
 OP_KW = ['airtel','at_only4u','at_special','at_topdeals','at_1p_sec','at_comeback',
          'at_boishakh','atforlife','monthly_minutes','airtel_data','airteloffer',
-         'airtelbonus','combop','limitedtime','ajker_offer','mini_combo','mini_pack',
+         'airtelbonus','airtelvoice','airteloffers','airtel best','airtel_hub',
+         'airtel_loan','airtel rebate','at rebate','at_rebate',
+         'combop','limitedtime','ajker_offer','mini_combo','mini_pack',
          'bishalof','bondho_','specialpack','darun_offer','beshi_min','goongoon',
          'secretoffer','tong offer','lucky_hour','best_deal','cashback','myfamily',
-         'myrobi','nagad_offer','apnar_offer','gp','gpstar','gp-info','gpalert',
-         'grameenphone','robi','banglalink','bl-','mybl','bl offer','bl commerce',
-         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert']
+         # Airtel promo sender names
+         'combopac','best_voice','best voice','iphone14','at_250min','at_200min',
+         '1paisa call','1paisa','beshi meyad','beshi_meyad','newyroffer','newyr',
+         'voice_60day','beshi_kotha','shera offer','75min_50tk','super_deal',
+         'at_500min','at_50min','at_30day','30min_20tk','at_300min','at_100min',
+         'airtel_loan','airtelbonus','airteldata','beshi min','beshimin',
+         # Robi promo senders
+         'myrobi','robi','robiminutes','robi deal','robi data','robi elite',
+         'robioffer','robispecial','robi_offer','robi 30days','robi_mfs',
+         'robi 70tk','super_offer','superof','extra offer','dhamakadeal',
+         'jhotpotloan','jhotpot',   # Robi emergency loan — not real transaction
+         'mini_bundle','robi_loan',
+         # GP, BL, Teletalk promo
+         'nagad_offer','apnar_offer','gp','gpstar','gp-info','gpalert',
+         'grameenphone','banglalink','bl-','mybl','bl offer','bl commerce',
+         'blsuperdeal','teletalk','govtinfo','govt info','govt','btrc','news_alert',
+         'gpautoren','gp minute','gp data','gpminute','gp internet','gp loan',
+         'gp info','flexiload']
+
+# Airtel promo body keywords — sender নাম না পেলেও body দেখে filter
+AIRTEL_PROMO_BODY_RE = re.compile(
+    r'এয়ারটেলে\s+(?:আজ|বেশি|মাস|৩০দিন|\d+জিবি|\d+মিনিট|\d+দিন|সেরা|অফার|রিচার্জ)'
+    r'|\*4\*\d+\*1#'        # Airtel USSD code pattern
+    r'|\*২১২\*\d+#'         # Airtel Bengali USSD
+    r'|airtel.*(?:\d+gb|\d+জিবি|\d+min|\d+মিনিট)',
+    re.I)
 
 SKIP_BODY_RE = re.compile(
     # Messaging apps
@@ -151,10 +314,168 @@ SKIP_BODY_RE = re.compile(
     r"|need\s*(?:home\s*)?tutors?|experienced.*(?:male|female).*tutor"
     r"|du/buet/medical.*tutor|tutor.*du/buet|coaching\s*(?:centre|center|class)"
     r"|কোচিং\s*(?:সেন্টার|ক্লাস|করুন)|হোম\s*টিউটর\s*(?:পাওয়া|দেওয়া|প্রয়োজন|চাই)"
-    r"|free\s*(?:trial|class).*tutor|two\s*trial.*free\s*class",
+    r"|free\s*(?:trial|class).*tutor|two\s*trial.*free\s*class"
+
+    # SMSC delivery receipt — NIP/MOne CDR format, body নেই
+    r"|id:\d+\s+submit\s+date:\d+\s+done\s+date:\d+\s+stat:(?:DELIVRD|UNDELIV|EXPIRED|DELETED)"
+
+    # ── BD promo number থেকে আসা spam body patterns (v12) ─────────────────
+    r"|(?:fdr|fixed\s*deposit|fdm).*(?:rate|profit|return|interest)"
+    r"|(?:attractive|competitive|best)\s*(?:profit|interest|rate).*(?:fdr|deposit|investment)"
+    r"|security\s*guard.*(?:provide|service|rate|tk|taka|\d+)"
+    r"|(?:cleaning|pest\s*control|rodent|termite|mosquito|cockroach).*(?:service|call|contact)"
+    r"|সোফা.*ক্লিন|পোকামাকড়.*দমন|তেলাপোকা.*সার্ভিস|উইপোকা.*দমন"
+    r"|(?:tour\s*package|air\s*ticket|hotel\s*booking).*(?:call|contact|\d{10,11})"
+    r"|citizenship\s*program|visa.free.*travel|passport.*program"
+    r"|(?:tutor|tuition|coaching).*(?:available|needed|call|contact|01\d{9})"
+    r"|(?:electrical|substation|switchgear|ht\s*panel|lt\s*panel).*(?:supply|provide|contact)"
+    r"|(?:plot|flat|land).*(?:rajuk|purbachal|bashundhara|uttara).*(?:sale|tk|লক্ষ)"
+    r"|(?:winter|eid|season)\s*(?:collection|sale|offer|discount).*(?:call|visit|01\d{9,10})"
+    r"|(?:linen|garments|clothing|fashion)\s*(?:sale|offer|collection|discount).*(?:%|tk|taka)"
+
+    # System maintenance notice (ব্যাংক planned maintenance)
+    r"|for\s+system\s+maintenance.*(?:will\s+be|temporarily)\s+unavailable"
+    r"|(?:ibanking|mobile\s*app|internet\s*banking).*temporarily\s*unavailable"
+    r"|planned\s+maintenance.*(?:services?|unavailable|suspended)"
+
+    # Missed call alert service (auto-reply SMS)
+    r"|মিসড\s*কল\s*এলার্ট.*কল\s*গ্রহণ\s*করতে\s*পারছিনা"
+    r"|missed\s*call\s*alert.*unable\s*to\s*(?:receive|answer)"
+
+    # Emergency SOS (Google/phone auto-SMS)
+    r"|emergency\s*sos\s*i\s*called\s*emergency\s*services"
+    r"|called\s+emergency\s+services\s+from\s+this\s+approximate\s+location"
+
+    # Matrimony / marriage media
+    r"|biyemedia|পাত্র\s*পাত্রীর\s*সন্ধান|পাত্র\s*পাত্রীর\s*খোঁজ|বিবাহ\s*মিডিয়া"
+
+    # Immigration / visa service promo
+    r"|(?:tourist|student|business)\s*visa\s*processing.*(?:canada|uk|usa|australia|schengen)"
+    r"|citizenship\s*(?:in|program).*(?:new\s*zealand|turkey|portugal|malta|caribbean)"
+    r"|immigration\s*lawyer.*dhaka|meet.*immigration.*(?:lawyer|consultant)"
+
+    # Political campaign / election appeal
+    r"|নির্বাচিত\s*হলে.*(?:আমানত|জীবন|দেশ|সেবা)|ভোট\s*দিন|ভোট\s*চাই"
+    r"|(?:support|doa|vote).*(?:election|নির্বাচন)|seeking\s*your\s*kind\s*support.*(?:me\s*for|election)"
+
+    # AGM / shareholder notices
+    r"|(?:\d+(?:st|nd|rd|th)\s+agm|annual\s+general\s+meeting).*(?:plc|ltd|limited|company)"
+    r"|dear\s+valued\s+shareholder"
+
+    # StanChart generic security alerts (non-transaction)
+    r"|স্ট্যানচার্ট\s*ব্যাংক\s*কখনোই.*(?:কার্ড\s*নম্বর|pin|otp|cvv)"
+    r"|stanChart.*(?:never\s*ask|won't\s*ask|do\s*not\s*share).*(?:pin|otp|password|cvv)"
+
+    # Trustee / vehicle certificate renewal
+    r"|trustee\s+board\s+certificate.*(?:expire|expiry|renew|pay)"
+    r"|expiry\s+of\s+trustee.*metro.*(?:expire|renew|pay)"
+
+    # ── sample SMS থেকে চিহ্নিত নতুন patterns ──────────────────────────────
+    # StanChart card discount promo (Bengali) — sharetrip, ছাড়, ১৬%
+    r"|স্ট্যানচার্ট.*(?:কার্ড|card).*(?:ছাড়|discount|cashback|offer)"
+    r"|শেয়ারট্রিপ.*(?:ছাড়|discount|off)|sharetrip.*(?:ছাড়|discount)"
+    # Short promo URL (t.ly, tinyurl) — ব্যাংক/MFS কখনো এগুলো ব্যবহার করে না
+    r"|(?<!\w)t\.ly/\w+"
+    # Property management/brokerage service
+    r"|প্রপার্টি.*(?:ব্যবস্থাপনা|ক্রয়.*বিক্রয়|management).*\d{11}"
+    # Wellcare/Jolshiri/Purbachal plot promo
+    r"|ওয়েলকেয়ার.*(?:গ্রিনসিটি|greencity|প্লট|plot)"
+    r"|wellcare.*(?:গ্রিনসিটি|greencity|plot|প্লট)"
+    r"|জলসিড়ি.*(?:প্লট|plot|পূর্বাচল)"
+    # Hotel share / timeshare sale
+    r"|হোটেল\s*শেয়ার\s*বিক্রয়|hotel\s*share\s*(?:sale|sell)"
+    # Property listing (=Flat =Land >Bashundhara/Purbachal/Gulshan format)
+    r"|=\s*(?:land|flat|hospital|plot|katha|factory).*>\s*(?:bashundhara|purbachal|gulshan|moghbazar|mirpur|uttara)"
+    # Maternity / delivery package promo from medical college
+    r"|মেডিকেল\s*কলেজ.*(?:প্যাকেজ|package|delivery|প্রসূতি|পেইনলেস)"
+    r"|(?:normal|c-section|পেইনলেস)\s*delivery.*package"
+    r"|(?:maternity|প্রসূতি|প্রসব).*(?:package|প্যাকেজ).*(?:call|কল|01\d{9})"
+
+    # ── Club / Society / Org mass SMS (এই CDR থেকে চিহ্নিত) ─────────────────
+    # Golf tournament
+    r"|golf\s*(?:tournament|cup|championship|house\s*corporate)"
+    r"|kgcdhaka|armygolfclub|agcdhaka"
+    # Club committee election / ballot
+    r"|(?:ballot|ব্যালট)\s*(?:no|নং|number|#|নম্বর)[\s–\-]*\d+"
+    r"|কার্যনির্বাহী\s*কমিটি.*(?:নির্বাচন|ভোট|সমর্থন)"
+    r"|(?:executive\s*committee|ec\s*election).*(?:vote|support|candidate)"
+    # AGM / shareholder (any variant)
+    r"|annual\s*general\s*meeting"
+    # Janaza / condolence notice (social club mass SMS)
+    r"|নামাজে\s*জানাজা|জানাজার\s*নামাজ"
+    # Iftar party invite (mass SMS)
+    r"|ইফতার\s*(?:পার্টি|মাহফিল|অনুষ্ঠান).*আয়োজন"
+    # Doctor promo (NDC / Pain clinic)
+    r"|(?:consultant|কনসালটেন্ট).*(?:pain|পেইন).*(?:ndc|hospital|হাসপাতাল|মঙ্গলবার|বুধবার)"
+    # Jewelry / diamond sale
+    r"|(?:diamond|ডায়মন্ড).*(?:\d+%|ছাড়|sale|off|মেলা)"
+    # House of Bengal / jewelry shop promo
+    r"|(?:হাউজ\s*অব\s*বেঙ্গল|house\s*of\s*bengal)"
+    r"|(?:সোনা|হীরা).*(?:গহনা|সম্ভার).*(?:বসুন্ধরা|gulshan|দোকান|shop)"
+    # Card statement notification (not transaction)
+    r"|(?:statement|স্টেটমেন্ট).*(?:credit\s*card|closing\s*balance).*(?:sent|পাঠানো)"
+    # Tax deduction certificate email
+    r"|income\s*tax.*(?:deduction|certificate).*(?:sent|email|registered)"
+    # Fashion brand with social media link
+    r"|(?:fashion|brand|collection|পোশাক\s*ব্র্যান্ড).*(?:fb:|facebook\.com|instagram|rb\.gy)"
+    # Political/party mass SMS
+    r"|(?:খালেদা\s*জিয়া|বিএনপি|আওয়ামী).*(?:গণতন্ত্র|মুক্তি|আন্দোলন)"
+
+    # ── এই CDR থেকে চিহ্নিত নতুন patterns ──────────────────────────────────
+    # Shwapno / grocery price list (গরু ৭৪৮* ইলিশ ২৩৮* format)
+    r"|(?:গরু|ইলিশ|মিনিকেট|চিনি)\s*\d+\*"
+    # ARTISAN / real estate brand promo
+    r"|\[ARTISAN\]|artisan.*(?:flat|ফ্ল্যাট).*(?:%|ছাড়|discount)"
+    # FDR % offer from personal number
+    r"|(?:fdr|fixed\s*deposit).*\d+[\.,]\d+%.*(?:double|triple|years|বছর)"
+    # Industrial equipment supply from personal number
+    r"|(?:generator|ups|sub.station|solar\s*power).*\b01\d{9}\b"
+    r"|we\s+provide.*(?:generator|ups|solar|battery).*\d{11}"
+    # AC/Fridge/appliance maintenance service promo
+    r"|(?:air.condition|fridge|washing\s*machine).*(?:maintenance|repair|servic).*(?:contact|call|01\d{9})"
+    # Interior design promo
+    r"|(?:interior\s*design|ইন্টেরিয়র\s*ডিজাইন).*(?:call|whatsapp|01\d{9,10})"
+    # Apartment/flat promo from personal number
+    r"|(?:bedroom|bhk|apartment|flat).*(?:ready|ongoing|available).*(?:visit|contact|call|01\d{9})"
+    # Flat with area (sft/sqft) = real estate promo
+    r"|(?:flat|ফ্ল্যাট)\s+\d+\s*(?:sft|sqft|sq\.?\s*ft)"
+    # Property listing =Flat =Land format (personal number)
+    r"|=(?:flat|house|land|katha|sft)"
+    # RJSC share transfer appointment = legal/business solicitation
+    r"|(?:rjsc|share\s*transfer).*(?:appointment|re.signature|premises)"
+    # Insurance / financial institution solicitation (DMD/CFO etc.)
+    r"|(?:dmd|cfo|ceo)\s*(?:&|and)?\s*(?:cfo|ceo|md)?.*(?:insurance|finance).*(?:appointment|meet)"
+    # ATM/app service maintenance from personal number
+    r"|এটিএম.*পরিষেবা\s*বন্ধ|atm.*service.*(?:unavailab|closed|bnd).*(?:16269|\d{5})"
+    # USSD promo (*XXXXX# format)
+    r"|(?:ফ্রি|free).*(?:সার্ভিস|service).*\*\d{4,7}#"
+    r"|\*\d{4,7}#.*(?:ডায়াল|dial|চালু)"
+    # Cattle/livestock Eid promo
+    r"|(?:bull|গরু|cattle).*(?:grass.fed|natural|eid).*(?:delivery|01\d{9})"
+    # Emergency SOS location notification (auto-generated phone message)
+    r"|emergency\s*sos.*(?:approximate\s*location|location\s*has\s*changed)"
+    r"|you\s*are\s*receiving\s*this.*emergency\s*contact"
+    # Brand new year / Eid greeting from shop (brand name + শুভেচ্ছা)
+    r"|(?:কালেকশন|collection|fashion|boutique).*(?:এর\s*পক্ষ|পক্ষ\s*থেকে).*(?:শুভেচ্ছা|wishes)"
+    # Ramadan interior / home decor seasonal promo
+    r"|(?:ramadan|eid).*(?:special|package|offer).*(?:interior|design|home\s*decor)"
+    # Jewelry (ইস্কাটনে ফ্ল্যাট ও land share)
+    r"|ইস্কাটনে.*(?:ফ্ল্যাট|land|flat).*(?:চলছে|sale|01\d{9})",
     re.I | re.S)
 
-MISSED_RE = re.compile(r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন', re.I)
+# সব regex pattern-এ বাংলা string NFC normalize করি
+# কারণ: xlsx থেকে আসা বাংলা text-এ "য়" U+09DF (single char)
+# কিন্তু source code-এ "য়" = U+09AF + U+09BC (two chars)
+# regex engine এ দুটো আলাদা — NFC normalize করলে দুটোই U+09DF হয়
+import unicodedata as _ud_init
+def _nfc_re(pattern_str, flags=0):
+    return re.compile(_ud_init.normalize('NFC', pattern_str), flags)
+
+SKIP_BODY_RE    = _nfc_re(SKIP_BODY_RE.pattern, SKIP_BODY_RE.flags)
+
+MISSED_RE = _nfc_re(
+    r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন',
+    re.I)
 
 # OTP / verification — সব filter হবে
 OTP_BODY_RE = re.compile(
@@ -170,14 +491,23 @@ OTP_BODY_RE = re.compile(
     r'|ibas.*use.*(?:number|code|key)\s*:\s*\d'
     r'|please\s+use\s+the\s+(?:number|code|key)\s*:\s*\d'
     r'|সক্রিয়করণ\s*কোড[\s:]+\d'
-    r'|ticket\s+purchase.*is\s*:\s*\d',
+    r'|ticket\s+purchase.*is\s*:\s*\d'
+    r'|use\s+otp\s*:\s*\d'                  # BRAC: "Use OTP: 846941 to proceed"
+    r'|otp\s*:\s*\d{4,8}\s+to\s+proceed'   # generic OTP: XXXXXX to proceed
+    # NPSB/RTGS/interbank — শুধু তখনই OTP যদি কাছাকাছি ৪-৮ digit standalone code থাকে
+    # (TrxID/Ref alphanumeric তাই \b\d{4,8}\b দিয়ে আলাদা করা যায়)
+    r'|\b\d{4,8}\b[^\n]{0,60}proceed\s+with\s+(?:npsb|rtgs|within\s+bank|other\s+bank)'
+    r'|proceed\s+with\s+(?:npsb|rtgs|within\s+bank|other\s+bank)[^\n]{0,60}\b\d{4,8}\b',
     re.I)
 
 def is_filtered(sender, body):
     s  = str(sender).strip()
-    st = stype(s)
+    sl = s.lower()
+    st = stype(s, body)
     # OTP sender names — always filter
-    if s.lower() in OTP_SENDERS: return True
+    if sl in OTP_SENDERS: return True
+    # Named promo/brand senders — always filter
+    if sl in NAMED_PROMO_SENDERS: return True
     # Promotional numbers — always filter
     if st == "promo": return True
     # OTP/key মেসেজ — সব sender-এর জন্য বাদ
@@ -193,7 +523,10 @@ def is_filtered(sender, body):
     if SC_RE.match(s) and s not in BANK_SHORTCODES: return True
     # Operator sender keywords
     sl = s.lower()
-    return any(f in sl for f in OP_KW)
+    if any(f in sl for f in OP_KW): return True
+    # Airtel promo body — যেকোনো sender থেকে হলেও বাদ
+    if AIRTEL_PROMO_BODY_RE.search(body): return True
+    return False
 
 # ── Multi-part merge ────────────────────────────────────────
 def to_dt(d):
@@ -202,55 +535,90 @@ def to_dt(d):
     # Format: 20260210121148 (YYYYMMDDHHmmss) — GP operator format
     if re.match(r'^\d{14}$', s):
         try: return datetime.strptime(s, '%Y%m%d%H%M%S')
-        except: pass
+        except ValueError: pass
     # Format: 20260210 (YYYYMMDD only)
     if re.match(r'^\d{8}$', s):
         try: return datetime.strptime(s, '%Y%m%d')
-        except: pass
+        except ValueError: pass
     # Standard formats
     for fmt in ('%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S','%d/%m/%Y %H:%M'):
         try: return datetime.strptime(s[:19], fmt)
-        except: pass
+        except ValueError: pass
     return datetime.min
 
 def merge(sms_list):
     """ভাঙা (concatenated) SMS জোড়া লাগায়।
-    - Personal BD নম্বর: ২ মিনিটের মধ্যে একই sender → merge
-    - MFS/Bank/Service (যেমন bKashNotice): ৩০ সেকেন্ডের মধ্যে একই sender → merge
-      (এই ধরনের SMS অপারেটর নিজে ভেঙে পাঠায়, body continuation বোঝা যায়)
+    - Personal BD নম্বর: ৪৫ সেকেন্ডের মধ্যে একই sender → merge
+      (শর্ত: current body ≤ 153 char — single SMS part limit; বড় body = complete SMS)
+    - MFS/Bank/Service: ৩০ সেকেন্ডের মধ্যে একই sender → merge
+      (শর্ত: current body-তে balance/TrxID নেই — থাকলে complete SMS, আলাদা রাখো)
     """
+    _PERSONAL_MERGE_WINDOW = 45    # seconds
+    _PERSONAL_BODY_MAX     = 153   # char — এর বেশি = complete personal SMS
+
+    # Bank/MFS "complete" SMS detector:
+    # balance / TrxID / helpline থাকলে → নিজেই complete, পরেরটার সাথে merge করব না
+    # এটাই EBL batch transaction সমস্যার মূল fix
+    BANK_COMPLETE_RE = re.compile(
+        r'[Bb]al(?:ance)?\s*(?:is\s*)?(?:BDT|[Tt][Kk])?\s*[\d,]+'  # Balance is BDT / Bal Tk
+        r'|Avail(?:able)?\s+Bal'           # Avail Bal
+        r'|C/B\s+Tk'                       # DBBL C/B pattern
+        r'|Helpline\s+\d{4,5}'            # EBL Helpline 16230
+        r'|TrxID\s+\w{6,}'                # bKash TrxID
+        r'|Txn\s*ID\s*[:\s]\w{6,}'
+        r'|নতুন\s+ব্যালেন্স'               # Bangla balance
+        r'|বর্তমান\s+ব্যালেন্স',
+        re.I
+    )
+
     items = sorted(sms_list, key=lambda x: to_dt(x["date"]))
     out, i = [], 0
     while i < len(items):
-        cur = dict(items[i])
-        st  = stype(cur["sender"])
-        dt0 = to_dt(cur["date"])
-        sl0 = cur["sender"].strip().lower()
+        cur  = dict(items[i])
+        st   = stype(cur["sender"], cur.get("body",""))
+        dt0  = to_dt(cur["date"])
+        sl0  = cur["sender"].strip().lower()
         body = cur["body"]
 
         if st == "personal":
-            # Personal: ২ মিনিট window
+            # Personal: ৪৫ সেকেন্ড window এবং body ছোট হলেই merge
             j = i + 1
             while j < len(items):
                 nx = items[j]
+                time_diff = abs((to_dt(nx["date"]) - dt0).total_seconds())
                 if (stype(nx["sender"]) == "personal"
                         and nx["sender"].strip().lower() == sl0
-                        and abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 120):
+                        and time_diff <= _PERSONAL_MERGE_WINDOW
+                        and len(body) <= _PERSONAL_BODY_MAX):
                     body += " " + nx["body"]
                     j += 1
                 else:
                     break
         else:
-            # MFS/Bank/Service/Other: ৩০ সেকেন্ড window — same sender, continuation
+            # MFS/Bank/Service/Other: ৩০ সেকেন্ড window
             j = i + 1
             while j < len(items):
                 nx = items[j]
-                if (nx["sender"].strip().lower() == sl0
-                        and abs((to_dt(nx["date"]) - dt0).total_seconds()) <= 30):
-                    body += " " + nx["body"]
-                    j += 1
-                else:
+                time_diff = abs((to_dt(nx["date"]) - dt0).total_seconds())
+                if not (nx["sender"].strip().lower() == sl0 and time_diff <= 30):
                     break
+
+                cur_body = body  # accumulated so far
+                nx_body  = nx["body"]
+
+                # OTP আর transaction আলাদা রাখো
+                cur_is_otp = bool(OTP_BODY_RE.search(cur_body))
+                nx_is_otp  = bool(OTP_BODY_RE.search(nx_body))
+                if cur_is_otp != nx_is_otp:
+                    break
+
+                # ★ CORE FIX: যদি current accumulated body-ই complete
+                # (balance/TrxID আছে) তাহলে পরেরটা আলাদা transaction — merge করো না
+                if BANK_COMPLETE_RE.search(cur_body):
+                    break
+
+                body += " " + nx_body
+                j += 1
 
         cur["body"]  = body.strip()
         cur["parts"] = j - i
@@ -285,18 +653,37 @@ TXN_P = [
     r'[Tt]xn\s+(?:of\s+)?[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Pp]urchase\s+(?:BDT|INR|USD|\$)\s*([\d,]+\.?\d*)',
     r'[Dd]ebited\s+for.*?(?:BDT|[Tt][Kk])\.?\s*([\d,]+\.?\d*)',
-    # DBBL / 16216 / NexusPay pattern:
-    # "debited (ATM Cash Withdrawal) by Tk20,000.00"
-    # "debited CHARGE FOR AGENT BANKING by Tk100.00"
-    # "credited(Refund of Nexus Card...) by Tk2,399.24"
+    # DBBL / NexusPay pattern
     r'debited\s+(?:\(.*?\)|[A-Z\s]+)\s+by\s+Tk-?([\d,]+\.?\d*)',
     r'credited\s*(?:\(.*?\)|[A-Z\s]+)\s+by\s+Tk([\d,]+\.?\d*)',
-    # Sonali Bank: "for BDT 7,488.00"
+    # Sonali Bank
     r'for\s+BDT\s+([\d,]+\.?\d*)',
     # IBBL: "Withdrawn 5000.00 BDT" / "5000.00 BDT"
     r'(?:Withdrawn|Deposited)\s+([\d,]+\.?\d*)\s+BDT',
-    # Standard Bank / Standard Islami: "BDT 1,00,000.00 credited/debited to/from A/C#"
+    # IBBL clearing: "Tk.80399.00 has been clearing withdrawn/deposited"
+    #               "Tk 1153134.00 has been clearing deposited"
+    r'[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+has\s+been\s+clearing\s+(?:withdrawn|deposited)',
+    # Standard Bank / Standard Islami
     r'BDT\s+([\d,]+\.?\d*)\s+(?:credited|debited)',
+    # IBBL "Deposited X.XX BDT for Card"
+    r'Deposited\s+([\d,]+\.?\d*)\s+BDT\s+for\s+Card',
+    # ATM credited: "ATM Tk 145039 has been credited"
+    r'ATM\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+has\s+been\s+credited',
+    # EBL / bank CHEQUE CLEARING: "AC XXXX is credited with BDT XXXXX as CHEQUE CLEARING"
+    r'is\s+credited\s+with\s+BDT\s+([\d,]+\.?\d*)',
+    # EBL debit: "AC XXXX is debited with BDT XXXXX as TRANSFER"
+    r'is\s+debited\s+with\s+BDT\s+([\d,]+\.?\d*)',
+    r'Payment\s+of\s+BDT\s+([\d,]+\.?\d*)\s+has\s+been\s+credited',
+    # IBBL CellFin: "Received 200000.00Tk"
+    r'[Rr]eceived\s+([\d,]+\.?\d*)\s*[Tt]k\b',
+    # IBBL CellFin / IBBPLC: "Deposit Amount: 100,000.00"
+    r'[Dd]eposit\s+[Aa]mount\s*:\s*([\d,]+\.?\d*)',
+    # bKash Pay Bill / Payment: "request of Tk X" / "payment of Tk X"
+    r'[Rr]equest\s+of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    # MetLife: "BDT** 11377.00" (asterisks between BDT and amount)
+    r'BDT\s*\*+\s*([\d,]+\.?\d*)',
+    # Bangla taka sign ৳ — MetLife IDRAMETLIFE: "৳১১৩৭৭.০০"
+    r'৳\s*([\d,]+\.?\d*)',
     # Bangla MFS patterns
     r'আপনি\s+([\d,]+\.?\d*)\s*টাকা\s+(?:পেয়েছেন|ক্যাশ\s*ইন)',
     r'([\d,]+\.?\d*)\s*টাকা\s+(?:পেয়েছেন|জমা\s*হয়েছে)',
@@ -305,20 +692,43 @@ TXN_P = [
 ]
 
 def get_amount(text):
-    # Balance / C/B / Fee বাদ দিই
+    # ── ধাপ ০: বাংলা সংখ্যা → ASCII digit convert (MetLife IDRAMETLIFE format) ──
+    bn_map = str.maketrans('০১২৩৪৫৬৭৮৯', '0123456789')
+    text   = text.translate(bn_map)
+
+    # ── ধাপ ১: balance / fee / A/C number জাতীয় সংখ্যা বাদ দিই ──────────────
     c = re.sub(r'C/B\s+Tk[\d,]+\.?\d*','',text)
     c = re.sub(r'Avl\s+Bal[:\s]+[\d,]+\.?\d*','',c)
+    c = re.sub(r'Avail\s+Bal[:\s]+BDT\s+[\d,]+\.?\d*','',c,flags=re.I)
     c = re.sub(r'A/C\s+Bal\s+BDT\s+[\d,.]+','',c)
+    # "Balance TK X" / "Balance: TK X" / "Balance is BDT X"
+    c = re.sub(r'[Bb]alance[:\s\.]+[Tt]?[Kk]?\.?\s*[\d,]+\.?\d*','',c)
     c = re.sub(r'(?:[Aa]vl?\.?\s+)?[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*[\d,]+\.?\d*','',c)
     c = re.sub(r'[Ff]ee[:\s]+[Tt][Kk]?\.?\s*[\d,]+\.?\d*','',c)
-    vals = []
+    # "Ref X" — bKash Ref number বাদ
+    c = re.sub(r'\bRef\s+\d+\b','',c,flags=re.I)
+    # বাংলা ব্যালেন্স — "নতুন ব্যালেন্স: X টাকা"
+    c = re.sub(r'(?:নতুন|বর্তমান)\s+ব্যালেন্স[:\s]+[\d,]+\.?\d*\s*টাকা','',c)
+    # MetLife Policy number — "Policy-102268" / "পলিসি **৬৮৭৮" (masked) → বাদ
+    c = re.sub(r'[Pp]olicy[-\s\*]+[\d\*]+','',c,flags=re.I)
+    c = re.sub(r'পলিসি\s*[\*\d]+','',c)
+    # A/C number — masked বাদ
+    c = re.sub(r'A/C\s*#?[\d\*]+','',c,flags=re.I)
+    # ── ধাপ ২: TXN_P patterns দিয়ে amount খোঁজো ─────────────────────────────
+    # Priority: প্রথম match-এর priority সবচেয়ে বেশি (most specific pattern আগে)
+    # শুধু tie-break (কোনো match না হলে) ক্ষেত্রে max() ব্যবহার হয়
+    first_val = None
+    all_vals  = []
     for p in TXN_P:
-        for m in re.findall(p,c,re.I):
+        for m in re.findall(p, c, re.I):
             try:
-                f = float(str(m).replace(',',''))
-                if f > 0: vals.append(f)
-            except: pass
-    return max(vals) if vals else 0.0
+                f = float(str(m).replace(',', ''))
+                if f > 0:
+                    if first_val is None: first_val = f  # first specific match
+                    all_vals.append(f)
+            except (ValueError, TypeError): pass
+    if first_val is not None: return first_val
+    return 0.0
 
 def tier(amt):
     if amt >= TIER_HIGH:  return "high"
@@ -355,19 +765,26 @@ TRAVEL_RE = re.compile(
     r'|ওমরা|umrah|\bহজ\b|omra|ফ্লাইট|ভিসা|\bNOC\b|N\.O\.C|ডিরেক্ট\s+ফ্লাইট', re.I)
 
 COURIER_RE = re.compile(
-    # শুধু tracking link বা bus ticket (location সহ) রাখো
+    # Tracking link/ID সহ courier SMS — সবসময় রাখো
     r'track\s+your\s+parcel|steadfast\.com\.bd/t/|ptho\.app/'
     r'|track\s+at\s+https|parcel\s+id.*track|tracking\s+id'
+    r'|redx\.com\.bd/\S+|ecourier\.com\.bd/\S+|paperfly\.com\.bd/\S+'
+    r'|track(?:ing)?\s+(?:id|no|code)\s*[:#]?\s*\w{5,}'
     r'|bus\s+point.*dhaka|dhaka.*bus\s+point|seat.*reserved.*from.*to'  # bus ticket
-    , re.I)
+    # Delivery status — শুধু tracking link/domain থাকলে রাখো
+    r'|(?:parcel|shipment|order).*(?:picked\s+up|out\s+for\s+delivery|delivered\s+successfully|being\s+returned).*(?:https?://|steadfast|ptho|redx|track)'
+    r'|rider.*(?:will\s+contact|is\s+coming|is\s+nearby|call\s+rider)'
+    , re.I | re.S)
 
 # Courier messages to FILTER (OTP, pickup, cancelled)
 COURIER_FILTER_RE = re.compile(
     r'ডেলিভারি\s*ওটিপি|delivery\s*otp|অর্ডারটির\s*ডেলিভারি'
     r'|আমরা.*থেকে\s+আপনার\s+পণ্য.*সংগ্রহ'  # pickup notification
-    r'|has\s+been\s+cancelled|cancelled\.?\s+to\s+complain'  # cancelled
     r'|cash\s+on\s+delivery.*যাচাই|verification\s+code.*delivery'
-    , re.I)
+    # Parcel status notifications with Parcel ID (cancelled/picked up etc.)
+    r'|parcel\s+id\s*#?\d+.*(?:cancelled|canceled|picked|dispatched|delivered)'
+    r'|parcel.*#\d+.*(?:cancelled|canceled)'
+    , re.I | re.S)
 
 SHOPPING_RE = re.compile(
     r'aarong|invoice|\bvn:|thanks\s+for\s+choosing|receipt|order\s*#|star\s+tech'
@@ -379,7 +796,12 @@ EDU_RE = re.compile(
     r'admission|ভর্তি|semester\s+fee|tuition\s+fee|semester\s+payment'
     r'|student\s+id|roll\s+no.*exam|result\s+published|পরীক্ষার\s+ফলাফল'
     r'|university|college|school|বিশ্ববিদ্যালয়|মহাবিদ্যালয়|বিদ্যালয়'
-    r'|hsc|ssc|jsc|psc|\bdiu\b|\bnsu\b|\bbrac\s+university\b|\buiu\b'
+    # hsc/ssc — context দেখো, shop abbreviation বাদ দাও
+    r'|\bhsc\s+(?:exam|result|admission|fee|form|pass|fail|batch|২০\d\d)\b'
+    r'|\bhsc\b(?!\s*(?:kuala|kl|kual|malaysia|my|street|road|tower|mall|plaza|building|avenue))'
+    r'|\bssc\s+(?:exam|result|admission|fee|form|pass|fail|batch|২০\d\d)\b'
+    r'|\bjsc\b|\bpsc\b'
+    r'|\bdiu\b|\bnsu\b|\bbrac\s+university\b|\buiu\b'
     r'|আইইউবি|নর্থসাউথ|ব্র্যাক\s+বিশ্ববিদ্যালয়'
     r'|hall\s+fee|hall\s+due|hostel\s+fee|registration\s+fee.*university'
     r'|payment.*received.*university|university.*payment'
@@ -429,8 +851,51 @@ BODY_BANK_RE = re.compile(
     re.I
 )
 BODY_MFS_RE = re.compile(
-    r'\bbKash\b|\bNagad\b|\bRocket\b|\bUpay\b|\bMcash\b', re.I
+    r'\bbKash\b|\bNagad\b|\bRocket\b|\bUpay\b|\bMcash\b|\bBinimoy\b', re.I
 )
+
+def _bank_from_text(bl):
+    """Body বা sender lowercase থেকে bank/mfs service শনাক্ত করে।
+    detect_service_from_body() ও get_acct() উভয়ই এটা ব্যবহার করে।
+    Returns: ("bank"/"mfs"/"") or service name string when name=True."""
+    # MFS
+    if re.search(r'\bbkash\b', bl):                          return "mfs"
+    if re.search(r'\bnagad\b', bl):                          return "mfs"
+    if re.search(r'\bbinimoy\b', bl):                        return "mfs"
+    if re.search(r'\brocket\b', bl) and "balance" in bl:     return "mfs"
+    # Bank keywords — same list used in both functions
+    if "islami bank" in bl or re.search(r'\bibbl\b', bl):   return "bank"
+    if "standard islami" in bl or "standardbnk" in bl:       return "bank"
+    if "standard bank" in bl:                                 return "bank"
+    if "brac bank" in bl or "bracbank" in bl:                 return "bank"
+    if "trust bank" in bl or "trustbank" in bl:               return "bank"
+    if "sonali bank" in bl:                                    return "bank"
+    if "dutch-bangla" in bl or re.search(r'\bdbbl\b', bl):   return "bank"
+    if "mutual trust" in bl or re.search(r'\bmtb\b', bl) or "mtblbddh" in bl: return "bank"
+    if "city bank" in bl:                                      return "bank"
+    if "southeast bank" in bl or "sebl" in bl:                return "bank"
+    if "ab bank" in bl:                                        return "bank"
+    if "prime bank" in bl:                                     return "bank"
+    if "ucb" in bl and "bank" in bl:                           return "bank"
+    if "eastern bank" in bl or re.search(r'\bebl\b', bl):    return "bank"
+    if "stanchart" in bl or "stancharbd" in bl:               return "bank"
+    # Islamic banks
+    if "al-arafah" in bl or "al arafah" in bl:               return "bank"
+    if "shahjalal" in bl or re.search(r'\bsjibl\b', bl):     return "bank"
+    if "exim bank" in bl or "eximbank" in bl:                 return "bank"
+    if "first security" in bl or re.search(r'\bfsibl\b', bl): return "bank"
+    if "global islami" in bl:                                  return "bank"
+    if "union bank" in bl:                                     return "bank"
+    # Private banks
+    if "mercantile bank" in bl:                               return "bank"
+    if "one bank" in bl or re.search(r'\bonebank\b', bl):     return "bank"
+    if "nrb bank" in bl or "nrb commercial" in bl:            return "bank"
+    if "midland bank" in bl:                                   return "bank"
+    if "community bank" in bl:                                 return "bank"
+    if "padma bank" in bl:                                     return "bank"
+    if "jamuna bank" in bl:                                    return "bank"
+    if "modhumoti bank" in bl:                                 return "bank"
+    return ""
 
 def detect_service_from_body(body):
     """Body থেকে ব্যাংক/MFS শনাক্ত করে।
@@ -438,45 +903,58 @@ def detect_service_from_body(body):
     bl = body.lower()
     # bKash/Nagad transfer FROM bank messages — এগুলো MFS transaction
     if re.search(r'received\s+a?\s*deposit\s+of\s+tk.*from\s+\w+\s+bank\s+account', bl): return "mfs"
-    if "islami bank" in bl or re.search(r'\bibbl\b', bl):  return "bank"
-    if "standard islami" in bl or "standardbnk" in bl:     return "bank"
-    if "standard bank" in bl:                               return "bank"
-    if "brac bank" in bl or "bracbank" in bl:               return "bank"
-    if "trust bank" in bl or "trustbank" in bl:             return "bank"
-    if "sonali bank" in bl:                                  return "bank"
-    if "dutch-bangla" in bl or re.search(r'\bdbbl\b', bl): return "bank"
-    if "mutual trust" in bl or re.search(r'\bmtb\b', bl) or "mtblbddh" in bl: return "bank"
-    if "city bank" in bl:                                   return "bank"
-    if "southeast bank" in bl or "sebl" in bl:              return "bank"
-    if "ab bank" in bl:                                     return "bank"
-    if "prime bank" in bl:                                  return "bank"
-    if "ucb" in bl and "bank" in bl:                        return "bank"
-    if "eastern bank" in bl or re.search(r'\bebl\b', bl):  return "bank"
-    if re.search(r'\bbkash\b', bl):                         return "mfs"
-    if re.search(r'\bnagad\b', bl):                         return "mfs"
-    if re.search(r'\brocket\b', bl) and "balance" in bl:   return "mfs"
-    return ""
+    # bKash TrxID format: DD[A-Z0-9]{6,} — body-তে "bKash" word না থাকলেও detect করে
+    # (personal BD number থেকে bKash notification relay হলে)
+    if re.search(r'\bTrxID\s+DD[A-Z0-9]{6,}', body, re.I): return "mfs"
+    return _bank_from_text(bl)
 
 def analyze_one(sender, body, date, direction=""):
-    st  = stype(sender)
+    st  = stype(sender, body)
     amt = get_amount(body)
     t   = tier(amt)
     cats = []
 
-    if t: cats.append(f"txn_{t}")
+    # Foreign bank (AlRajhi MY, Maybank etc.) — MYR/SGD/AED amount বের করো
+    if st == "foreign_bank":
+        f_amt   = get_foreign_amount(body)
+        f_ccy   = get_foreign_currency(body)
+        if f_amt > 0:
+            cats.append("travel_txn")
+        elif TRAVEL_RE.search(body):
+            cats.append("travel")
+        else:
+            cats.append("travel_txn")
+        acct = get_acct(sender, body, f_amt)
+        if not acct.get("service"):
+            acct["service"] = "AlRajhi Bank (Malaysia)" if is_foreign_bank(sender) else "Foreign Bank"
+        acct["amount"]   = f_amt
+        acct["currency"] = f_ccy
+        return {"sender":str(sender),"body":body,"date":str(date) if date else "",
+                "month":(date.strftime('%Y-%m') if isinstance(date,datetime) else str(date)[:7]),
+                "sender_type":"foreign_bank","categories":cats,
+                "amount":f_amt,"tier":"","acct":acct,"direction":direction,
+                "currency":f_ccy}
 
     # Personal নম্বর হলেও body-তে bank/MFS থাকলে সেই type অনুযায়ী চলবে
     body_st = detect_service_from_body(body)
     if st == "personal" and body_st in ("bank","mfs"):
         st = body_st
 
-    # MFS/Bank — OTP ও low balance বাদ
-    if st in ("mfs","bank") and not t:
+    # MFS/Bank — OTP ও low balance সবার আগে বাদ (tier থাকলেও)
+    if st in ("mfs","bank"):
         if OTP_RE.search(body) or LOW_BAL_RE.search(body): return None
-        # amount আছে — sidebar summary-র জন্য রাখো (card-এ দেখাবে না)
+
+    if t: cats.append(f"txn_{t}")
+
+    # MFS/Bank — tier নেই → sidebar summary
+    if st in ("mfs","bank") and not t:
         acct_tmp = get_acct(sender, body, amt)
         if acct_tmp.get("balance",0) > 0 or amt > 0:
             cats.append("bank_info")   # sidebar only
+        # bank shortcode থেকে courier/travel/service SMS আসতে পারে (e.g. 16247 = bKash courier relay)
+        elif COURIER_RE.search(body):  cats.append("courier")
+        elif TRAVEL_RE.search(body):   cats.append("travel")
+        elif SHOPPING_RE.search(body): cats.append("shopping")
 
     if st == "personal":
         if ID_RE.search(body):         cats.append("identity")
@@ -532,7 +1010,11 @@ def get_acct(sender, body, amt):
         if   "bkash"    in sl: info["service"]="bKash"
         elif "nagad"    in sl: info["service"]="Nagad"
         elif "rocket"   in sl: info["service"]="Rocket"
-        elif "dutch-bangla" in sl or "dbbl" in sl: info["service"]="Dutch-Bangla Bank (DBBL)"
+        elif "binimoy"  in sl: info["service"]="Binimoy"
+        # bKash TrxID format (DD[A-Z0-9]+) — sender personal কিন্তু body bKash
+        elif re.search(r'\bTrxID\s+DD[A-Z0-9]{6,}', body, re.I): info["service"]="bKash"
+        elif "dutch-bangla" in sl or "dutchbangla" in sl or "dbbl" in sl \
+             or "nexuspay" in sl or "nexus pay" in sl: info["service"]="Dutch-Bangla Bank (DBBL)"
         elif "upay"     in sl: info["service"]="Upay"
         elif "ibbl"     in sl or "islami" in sl: info["service"]="Islami Bank"
         elif "trustbank" in sl or "trust bank" in sl: info["service"]="Trust Bank"
@@ -542,44 +1024,99 @@ def get_acct(sender, body, amt):
         elif "sonali"   in sl: info["service"]="Sonali Bank"
         elif "brac"     in sl: info["service"]="BRAC Bank"
         elif "metlife"  in sl: info["service"]="MetLife"
+        elif "stanchart" in sl or "stancharbd" in sl: info["service"]="Standard Chartered Bank"
 
-    # Body fallback — যেকোনো নম্বর থেকে আসলেও bank detect করবে
+    # Body fallback — যেকোনো নম্বর থেকে আসলেও bank/MFS detect করবে
+    # _bank_from_text() helper ব্যবহার করে code duplication এড়ানো হচ্ছে
     if not info["service"]:
-        if "islami bank" in bl or re.search(r'\bibbl\b',bl):         info["service"]="Islami Bank"
-        elif "standard islami" in bl or "standard bank" in bl:        info["service"]="Standard Bank"
-        elif "brac bank" in bl or "bracbank" in bl:                   info["service"]="BRAC Bank"
-        elif "mutual trust" in bl or "mtblbddh" in bl or re.search(r'\bmtb\b',bl):
-            info["service"]="Mutual Trust Bank (MTB)"
-        elif "trust bank" in bl or "trustbank" in bl:                 info["service"]="Trust Bank"
-        elif "sonali bank" in bl:                                      info["service"]="Sonali Bank"
-        elif re.search(r'\bbkash\b',bl):                              info["service"]="bKash"
-        elif re.search(r'\bnagad\b',bl):                              info["service"]="Nagad"
-        elif "dutch-bangla" in bl or re.search(r'\bdbbl\b',bl) or "nexuspay" in bl:
-            info["service"]="Dutch-Bangla Bank (DBBL)"
-        elif "southeast bank" in bl or "sebl" in bl:                  info["service"]="Southeast Bank"
-        elif "prime bank" in bl:                                       info["service"]="Prime Bank"
-        elif "eastern bank" in bl or re.search(r'\bebl\b',bl):       info["service"]="Eastern Bank"
-        elif "city bank" in bl:                                        info["service"]="City Bank"
-        else: info["service"] = s
+        _bt = _bank_from_text(bl)
+        if _bt == "mfs":
+            # MFS service name
+            if re.search(r'\bbkash\b', bl):      info["service"] = "bKash"
+            elif re.search(r'\bnagad\b', bl):    info["service"] = "Nagad"
+            elif re.search(r'\bbinimoy\b', bl):  info["service"] = "Binimoy"
+            elif re.search(r'\brocket\b', bl):   info["service"] = "Rocket"
+            else:                                info["service"] = "MFS"
+        elif _bt == "bank":
+            # Bank service name — keyword-to-name map
+            _BANK_MAP = [
+                (r'\bibbl\b|islami bank',              "Islami Bank"),
+                (r'standard islami|standardbnk|standard bank', "Standard Bank"),
+                (r'brac bank|bracbank',                "BRAC Bank"),
+                (r'mutual trust|mtblbddh|\bmtb\b',     "Mutual Trust Bank (MTB)"),
+                (r'trust bank|trustbank',              "Trust Bank"),
+                (r'sonali bank',                       "Sonali Bank"),
+                (r'dutch-bangla|\bdbbl\b|nexuspay',    "Dutch-Bangla Bank (DBBL)"),
+                (r'southeast bank|sebl',               "Southeast Bank"),
+                (r'prime bank',                        "Prime Bank"),
+                (r'eastern bank|\bebl\b',              "Eastern Bank"),
+                (r'city bank',                         "City Bank"),
+                (r'stanchart|stancharbd',              "Standard Chartered Bank"),
+                (r'al-arafah|al arafah',               "Al-Arafah Islami Bank"),
+                (r'shahjalal|\bsjibl\b',               "Shahjalal Islami Bank"),
+                (r'exim bank|eximbank',                "EXIM Bank"),
+                (r'first security|\bfsibl\b',          "First Security Islami Bank"),
+                (r'global islami',                     "Global Islami Bank"),
+                (r'union bank',                        "Union Bank"),
+                (r'mercantile bank',                   "Mercantile Bank"),
+                (r'one bank|\bonebank\b',              "ONE Bank"),
+                (r'nrb bank|nrb commercial',           "NRB Bank"),
+                (r'midland bank',                      "Midland Bank"),
+                (r'community bank',                    "Community Bank Bangladesh"),
+                (r'padma bank',                        "Padma Bank"),
+                (r'jamuna bank',                       "Jamuna Bank"),
+                (r'modhumoti bank',                    "Modhumoti Bank"),
+            ]
+            for pat, name in _BANK_MAP:
+                if re.search(pat, bl):
+                    info["service"] = name
+                    break
+            if not info["service"]:
+                info["service"] = s
+        else:
+            info["service"] = s
 
     trx = re.search(r'(?:[Tt]rx|[Tt]xn)\s*[Ii][Dd]?[:\s]+([A-Z0-9]{8,})', body)
     if trx: info["trx_id"]=trx.group(1)
     nums = re.findall(r'\b(01[3-9]\d{8})\b', body)
     if nums: info["other_number"]=nums[0]
 
-    # Balance — C/B pattern (DBBL), Avl Bal, Balance, BDT balance
+    # Balance — সব bank format cover করে
     bal = re.search(r'C/B\s+Tk([\d,]+\.?\d*)', body)
+    if not bal: bal = re.search(r'Avail?\s+Bal[:\s]+BDT\s+([\d,]+\.?\d*)', body, re.I)
     if not bal: bal = re.search(r'Avl\s+Bal[:\s]+([\d,]+\.?\d*)', body)
     if not bal: bal = re.search(r'available\s+balance.*?(?:is\s+)?BDT\s+([\d,]+\.?\d*)', body, re.I)
     if not bal: bal = re.search(r'A/C\s+Bal\s+BDT\s+([\d,.]+)', body)
+    # EBL format: "Balance is BDT 77726062.25"
+    if not bal: bal = re.search(r'[Bb]alance\s+is\s+BDT\s+([\d,]+\.?\d*)', body)
+    # EBL format: "Balance: BDT 166240"
+    if not bal: bal = re.search(r'[Bb]alance[:\s]+BDT\s+([\d,]+\.?\d*)', body)
+    # General: "Balance Tk/TK X" or "Bal: X"
     if not bal: bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
     if bal:
         try: info["balance"]=float(bal.group(1).replace(',',''))
-        except: pass
+        except (ValueError, AttributeError): pass
+
+    # Account number — masked format (EBL: "AC 116***957", BRAC: "A/C#10656**0001")
+    acc_m = re.search(r'AC\s+([\d\*]+(?:\d|\*))', body, re.I)
+    if not acc_m: acc_m = re.search(r'A/C\s*#?\s*([\d\*]+(?:\d|\*))', body, re.I)
+    if acc_m:
+        # trailing asterisks বাদ দিই — "857**00008501**" → "857**00008501"
+        info["account"] = re.sub(r'\*+$', '', acc_m.group(1))
 
     bl2 = body.lower()
+
+    # Priority 0: MetLife / Insurance premium — customer pays = Sent
+    if re.search(r'acknowledge\s+receipt.*premium|গৃহীত\s+পলিসি|প্রিমিয়াম.*গৃহীত', bl2):
+        info["direction"] = "Sent"
+    # IBBL CellFin: "Received X Tk To: [our acc] From Acc: [external]" = Received
+    elif re.search(r'cellfin\s+received|islami\s+bank\s+cellfin', bl2):
+        info["direction"] = "Received"
+    # IBBL USD/foreign transfer to FRSD/IBWHO = foreign payment = Sent
+    elif re.search(r'transferred\s+to\s+frsd|transferred\s+to\s+ibwho|usd\s+endorsement', bl2):
+        info["direction"] = "Sent"
     # Priority 1: "Credit to your account" / "Debit from your account"
-    if re.search(r'credit(?:ed)?\s+to\s+your', bl2):
+    elif re.search(r'credit(?:ed)?\s+to\s+your', bl2):
         info["direction"] = "Received"
     elif re.search(r'debit(?:ed)?\s+from\s+your', bl2):
         info["direction"] = "Sent"
@@ -594,15 +1131,21 @@ def get_acct(sender, body, amt):
     elif re.search(r'\bdebited\b|\bwithdrawn\b|\bwithdrawal\b', bl2):
         info["direction"] = "Sent"
     # Priority 4: transferred TO/FROM — account perspective
-    # "transferred to your A/C / account" = Received (money came in)
-    # "transferred to Nagad/bKash/MFS/branch" = Sent (money went out)
     elif re.search(r'transfer(?:red)?\s+to\s+(?:nagad|bkash|rocket|upay|mfs|mcash)', bl2):
         info["direction"] = "Sent"
     elif re.search(r'transfer(?:red)?\s+to\s+(?:your\s+)?(?:a/c|account)', bl2):
+        # "transferred to your A/C" OR "transferred to A/C [number]" = Received
+        info["direction"] = "Received"
+    elif re.search(r'transfer(?:red)?\s+to\s+a/c\s*\*', bl2):
+        # "transferred to A/C 857**" (masked number) = Received
+        info["direction"] = "Received"
+    elif re.search(r'transfer(?:red)?\s+to\s+(?:\w[\w\s,]*)\s+a/c\s', bl2):
+        # "transferred to Bhadra subBr A/C 857**" = Received (target's branch A/C)
         info["direction"] = "Received"
     elif re.search(r'transfer(?:red)?\s+to\b', bl2):
-        info["direction"] = "Sent"    # money left the account → Sent
+        info["direction"] = "Sent"    # to somewhere else = Sent
     elif re.search(r'transfer(?:red)?\s+from\b', bl2):
+        # "transferred from [Branch/A/C] A/C [target]" = target withdrew = Sent
         info["direction"] = "Sent"
     elif re.search(r'deposited\s+(?:from|to\s+your)', bl2):
         info["direction"] = "Received"
@@ -612,54 +1155,153 @@ def get_acct(sender, body, amt):
         info["direction"] = "Received"
     elif re.search(r'\bcash\s*out\b|\bpurchase\b|\bpos\s+purchase\b'
                    r'|\bpayment\s+of\b|\bpaid\b|\bsend\s+money\b|\bsent\b'
+                   r'|\bpay\s*bill\b|\brequest\s+of\s+tk.*processed'
                    r'|ক্যাশ\s*আউট|পাঠিয়েছেন|উত্তোলন\s*করেছেন', bl2):
         info["direction"] = "Sent"
     return info
 
 # ── Data load ──────────────────────────────────────────────
 def load_xlsx(path):
-    wb = openpyxl.load_workbook(path, read_only=True)
+    # read_only=False — কিছু GP ফাইলে read_only=True তে data row দেখা যায় না
+    try:
+        wb = openpyxl.load_workbook(path, read_only=False, data_only=True)
+    except Exception:
+        wb = openpyxl.load_workbook(path, read_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     if not rows: return []
-    hdr = [str(c).strip().lower() if c else "" for c in rows[0]]
+    hdr = [str(c).strip() if c else "" for c in rows[0]]
+
     def ci(ns):
         for n in ns:
             for i,h in enumerate(hdr):
-                if n in h: return i
+                if n.lower() in h.lower(): return i
         return None
-    # Support both "StartTime"/"Start" and "A Party"/"AParty"/"BParty"/"B Party"
+
     ti = ci(['starttime','start','date','time'])
     ai = ci(['a party','aparty','sender_a'])
-    bi = ci(['b party','bparty','sender','sender_b'])
-    si = ci(['sender'])
+    bi = ci(['b party','bparty','sender_b','sender'])
     mi = ci(['message content','message','body','msg'])
     di = ci(['direction'])
-    out=[]
+
+    # ── Format detection ─────────────────────────────────────
+    # Format A (016-style): AParty=sender_name, BParty=target_number (same number repeats)
+    # Format B (017/880-style): AParty=target_number (repeats), BParty=sender_name
+    #
+    # Detection: SMSMT rows-এ যে column-এ একটাই value বারবার আসে সেটা target।
+    # target যদি BParty-তে → Format A;  target যদি AParty-তে → Format B
+    mt_a_vals = []
+    mt_b_vals = []
     for r in rows[1:]:
-        def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] else ""
-        aparty    = g(ai)
-        sender    = g(bi) if bi is not None else (g(ai) if ai is not None else g(si))
+        if ai is None or bi is None: break
+        if di is not None and di<len(r) and str(r[di]).strip().upper()=="SMSMT":
+            _body = str(r[mi]).strip() if mi is not None and mi<len(r) else ""
+            if _body and _body != "None":
+                if r[ai]: mt_a_vals.append(str(r[ai]).strip())
+                if r[bi]: mt_b_vals.append(str(r[bi]).strip())
+
+    # সবচেয়ে বেশি repeat হওয়া value-র frequency ratio
+    def top_freq_ratio(vals):
+        if not vals: return 0.0
+        c = Counter(vals)
+        top_count = c.most_common(1)[0][1]
+        return top_count / len(vals)
+
+    a_ratio = top_freq_ratio(mt_a_vals)  # AParty-তে একটা value কতটুকু dominant
+    b_ratio = top_freq_ratio(mt_b_vals)  # BParty-তে একটা value কতটুকু dominant
+
+    # যে column-এ dominant repeat বেশি → সেটাই target column
+    # Format A: BParty dominant (BParty=target) → sender = AParty
+    # Format B: AParty dominant (AParty=target) → sender = BParty
+    use_format_a = (b_ratio > a_ratio)   # BParty-তে target repeat বেশি
+
+    out = []
+    for r in rows[1:]:
+        def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] and str(r[i]).strip() not in ('','None') else ""
+        a_val     = g(ai)
+        b_val     = g(bi)
         body      = g(mi)
         raw_date  = r[ti] if ti is not None and ti<len(r) else ""
-        # Convert to datetime for consistent handling
         date      = to_dt(raw_date) if raw_date else ""
         direction = g(di).upper() if di is not None else ""
         if direction in ("SMSMT","MTSMS"): direction = "SMSMT"
         elif direction in ("SMSMO","MOSMS"): direction = "SMSMO"
+
+        if use_format_a:
+            # Format A: AParty=sender, BParty=target
+            sender = a_val or b_val
+            aparty = b_val
+        else:
+            # Format B: AParty=target, BParty=sender
+            if direction == "SMSMO":
+                sender = a_val   # target নিজে outgoing পাঠাচ্ছে
+                aparty = a_val
+            else:
+                sender = b_val or a_val
+                aparty = a_val
+
         if sender and body:
-            out.append({"sender":sender,"body":body,"date":date,
-                        "aparty":aparty,"direction":direction})
+            # Unicode NFC normalize করি — xlsx থেকে আসা বাংলা text-এ
+            # "য়" U+09DF (single char) vs U+09AF+U+09BC (two chars) মিস match এড়াতে
+            import unicodedata as _ud
+            body   = _ud.normalize('NFC', body)
+            sender = _ud.normalize('NFC', sender)
+            out.append({"sender": sender, "body": body, "date": date,
+                        "aparty": aparty, "direction": direction})
     return out
 
 def load_csv_f(path):
-    out=[]
-    with open(path,encoding='utf-8') as f:
-        for row in csv.DictReader(f):
-            s=row.get('BParty') or row.get('sender') or row.get('AParty','')
-            b=row.get('Message Content') or row.get('body') or row.get('message','')
-            d=row.get('Start') or row.get('date','')
-            if s and b: out.append({"sender":s,"body":b,"date":d})
+    """CSV parser — standard SMS export ও MOne SMSC format সাপোর্ট করে।
+    MOne format: OrgAddr=target, DestAddr=sender, body column নেই — empty return।"""
+    enc = 'utf-8'   # default
+    for _enc in ('utf-8-sig', 'utf-8', 'cp1252', 'latin-1'):
+        try:
+            with open(path, encoding=_enc, errors='strict') as f:
+                f.read(512)
+            enc = _enc
+            break
+        except (OSError, UnicodeDecodeError):
+            continue
+
+    with open(path, encoding=enc, errors='replace') as f:
+        try:
+            dialect = csv.Sniffer().sniff(f.read(4096))
+            f.seek(0)
+            reader = csv.DictReader(f, dialect=dialect)
+        except csv.Error:
+            f.seek(0)
+            reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows: return []
+    keys = list(rows[0].keys())
+
+    # MOne SMSC format — OrgAddr column আছে কিন্তু body নেই
+    if any('OrgAddr' in k or 'orgaddr' in k.lower() for k in keys):
+        return []   # body ছাড়া analysis সম্ভব নয়
+
+    def _fk(names):
+        for n in names:
+            for k in keys:
+                if n.lower() in k.lower(): return k
+        return None
+
+    sk   = _fk(['bparty','b party','sender_b','sender'])
+    ak   = _fk(['aparty','a party','sender_a'])
+    bk   = _fk(['message content','message','body','msg','content'])
+    dk   = _fk(['start','date','time'])
+    dirk = _fk(['direction'])
+
+    for r in rows:
+        def g(k): return str(r.get(k,'')).strip() if k else ''
+        s    = g(sk) or g(ak)
+        body = g(bk)
+        date = g(dk)
+        direction = g(dirk).upper() if dirk else ""
+        if direction in ("SMSMT","MTSMS"): direction="SMSMT"
+        elif direction in ("SMSMO","MOSMS"): direction="SMSMO"
+        if s and body:
+            out.append({"sender":s,"body":body,"date":date,"direction":direction})
     return out
 
 # ── HTML ───────────────────────────────────────────────────
@@ -670,6 +1312,7 @@ CAT_META = {
     "identity":   {"label":"Identity / Profile Info",         "color":"#0369a1","icon":"👤"},
     "love_family":{"label":"Personal / Family",               "color":"#db2777","icon":"❤️"},
     "travel":     {"label":"Travel / Visa / Umrah",           "color":"#0284c7","icon":"✈️"},
+    "travel_txn": {"label":"Foreign Card Transaction",        "color":"#0f766e","icon":"💳"},
     "courier":    {"label":"Courier / Delivery",              "color":"#6d28d9","icon":"📦"},
     "chalan":     {"label":"Govt. Challan / Treasury / Court","color":"#047857","icon":"🏛️"},
     "education":  {"label":"Education / Admission / Payment", "color":"#0891b2","icon":"🎓"},
@@ -690,7 +1333,8 @@ def build_bank_summary(sms_list, extra_balances=None):
     from collections import defaultdict
     summ = defaultdict(lambda:{
         "service":"","txn_count":0,"total_in":0.0,"total_out":0.0,
-        "last_balance":0.0,"last_balance_date":"","max_txn":0.0,"numbers":set()
+        "last_balance":0.0,"last_balance_date":"","max_txn":0.0,"numbers":set(),
+        "accounts": defaultdict(lambda:{"balance":0.0,"balance_date":"","txn_count":0})
     })
     SVC_COL = {
         "bKash":"#e11d48","Nagad":"#ea580c","Rocket":"#7c3aed","Upay":"#16a34a",
@@ -699,26 +1343,52 @@ def build_bank_summary(sms_list, extra_balances=None):
         "Dutch-Bangla Bank (DBBL)":"#6d28d9",
         "Mutual Trust Bank (MTB)":"#0891b2","Mutual Trust Bank":"#0891b2",
         "Southeast Bank":"#7c2d12","Prime Bank":"#1e40af","Eastern Bank":"#065f46",
-        "City Bank":"#9f1239",
+        "City Bank":"#9f1239","Standard Chartered Bank":"#1e40af",
     }
+    # Investment/FDR/internal cycling transaction types — Received/Sent হিসেবে count করব না
+    # কারণ এগুলো একই টাকা ঘুরে আসে (Govt Securities buy+sell, FDR open+close, internal transfer)
+    INTERNAL_TXN_TYPES = {
+        'government securities', 'new deposit', 'account close out balance',
+        'fund transfer request', 'ebl account transfer',
+        'profit liquidation', 'ic interest liquidation', 'tax on profit',
+        'excise duty', 'witholding source tax', 'withholding tax',
+        'credit card si payment', 'account close', 'fdr', 'tdr',
+    }
+
     for s in sms_list:
         ai = s.get("acct",{})
         if not ai or not ai.get("service"): continue
         svc = ai["service"]; d = summ[svc]
         d["service"] = svc
 
-        # Summary-তে সব transaction count করো — 1 টাকা থেকে সব
         amt = ai.get("amount",0) or 0
         if amt > 0:
             d["txn_count"] += 1
-            if "Received" in (ai.get("direction","") or ""): d["total_in"]  += amt
-            else:                                             d["total_out"] += amt
+            # txn type body থেকে detect — investment/internal হলে আলাদা bucket
+            body_lower = s.get("body","").lower()
+            is_internal = any(t in body_lower for t in INTERNAL_TXN_TYPES)
+            if is_internal:
+                d["total_cycling"] = d.get("total_cycling", 0.0) + amt
+            elif "Received" in (ai.get("direction","") or ""):
+                d["total_in"]  += amt
+            else:
+                d["total_out"] += amt
             if amt > d["max_txn"]: d["max_txn"] = amt
 
-        # last_balance — তারিখ অনুযায়ী সর্বশেষ balance রাখো
+        # per-account balance tracking
+        acc_no = ai.get("account","")
+        sms_date = str(s.get("date",""))
         bal = ai.get("balance",0) or 0
         if bal > 0:
-            sms_date = str(s.get("date",""))
+            # account-level last balance (তারিখ অনুযায়ী)
+            if acc_no:
+                acc_entry = d["accounts"][acc_no]
+                acc_entry["txn_count"] += 1
+                if sms_date > acc_entry["balance_date"]:
+                    acc_entry["balance"]      = bal
+                    acc_entry["balance_date"] = sms_date
+            # service-level last balance — সব account-এর সর্বশেষ balance এর সমষ্টি নয়,
+            # বরং সর্বশেষ date-এর balance (single-account case-এ সঠিক থাকে)
             if sms_date > d["last_balance_date"]:
                 d["last_balance"] = bal
                 d["last_balance_date"] = sms_date
@@ -728,8 +1398,22 @@ def build_bank_summary(sms_list, extra_balances=None):
 
     result = {}
     for svc, d in summ.items():
-        result[svc] = {**d, "numbers": list(d["numbers"])[:4],
-                       "color": SVC_COL.get(svc, "#2563eb")}
+        # multi-account: account-wise last balance-এর সমষ্টি দেখাও
+        accs = dict(d["accounts"])
+        acc_total_balance = sum(v["balance"] for v in accs.values() if v["balance"] > 0)
+        # ১টির বেশি account থাকলে sum ব্যবহার করো, না হলে single last balance
+        display_balance = acc_total_balance if len(accs) > 1 and acc_total_balance > 0 \
+                          else d["last_balance"]
+        result[svc] = {
+            **{k:v for k,v in d.items() if k not in ("accounts",)},
+            "numbers": list(d["numbers"])[:4],
+            "color": SVC_COL.get(svc, "#2563eb"),
+            "accounts": {k: {"balance": v["balance"], "txn_count": v["txn_count"]}
+                         for k,v in accs.items() if v["txn_count"] > 0},
+            "display_balance": display_balance,
+            "multi_account": len(accs) > 1,
+            "total_cycling": d.get("total_cycling", 0.0),
+        }
 
     # extra_balances — transaction ছাড়া bank balance (যেমন MTB balance notification)
     for svc, eb in extra_balances.items():
@@ -754,10 +1438,29 @@ def generate_html(sms_list, stats, out_path, tn=""):
 
     # bank_info — sidebar summary-র জন্য, card-এ দেখাবে না
     # display_list-এ শুধু 10K+ transaction এবং অন্য categories (personal, travel ইত্যাদি)
-    display_list = [s for s in sms_list
-                    if "bank_info" not in s.get("categories",[])
-                    and not (s.get("categories") == [f"txn_{s.get('tier','')}"]
-                             and s.get("tier","") == "")]
+    # foreign_bank SMS → সর্বোচ্চ 20টি card, বাকিগুলো summary block-এ
+    _non_ftxn = [s for s in sms_list
+                 if "bank_info" not in s.get("categories",[])
+                 and "travel_txn" not in s.get("categories",[])
+                 and not (s.get("categories") == [f"txn_{s.get('tier','')}"]
+                          and s.get("tier","") == "")]
+    _ftxn_all  = [s for s in sms_list if "travel_txn" in s.get("categories",[])]
+    _ftxn_show = _ftxn_all[:20]
+    _ftxn_hidden = _ftxn_all[20:]
+
+    # Foreign txn summary stats
+    _ftxn_by_ccy = {}
+    for s in _ftxn_all:
+        ccy = s.get("currency","MYR") or "MYR"
+        amt = s.get("amount",0) or 0
+        if ccy not in _ftxn_by_ccy:
+            _ftxn_by_ccy[ccy] = {"count":0,"total":0.0,"max":0.0}
+        _ftxn_by_ccy[ccy]["count"] += 1
+        _ftxn_by_ccy[ccy]["total"] += amt
+        if amt > _ftxn_by_ccy[ccy]["max"]:
+            _ftxn_by_ccy[ccy]["max"] = amt
+
+    display_list = _non_ftxn + _ftxn_show
 
     months    = sorted({s["month"] for s in display_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in display_list)
@@ -770,7 +1473,8 @@ def generate_html(sms_list, stats, out_path, tn=""):
                 "06":"June","07":"July","08":"August","09":"September",
                 "10":"October","11":"November","12":"December"}
     CAT_EN = {"txn_high":"High Transaction (100K+)","txn_med":"Medium Transaction (50K–100K)",
-              "txn_small":"Small Transaction (10K–50K)","identity":"Identity / Profile Info",
+              "txn_small":"Small Transaction (10K–50K)","travel_txn":"💳 Foreign Card Transaction",
+              "identity":"Identity / Profile Info",
               "love_family":"Personal / Family","travel":"Travel / Visa / Umrah",
               "courier":"Courier / Delivery","chalan":"Govt. Challan / Treasury / Court",
               "education":"Education / Admission / Payment",
@@ -786,9 +1490,16 @@ def generate_html(sms_list, stats, out_path, tn=""):
             o+=(f'<span class="ctag" style="background:{col}12;border:1px solid {col}35;color:{col}">'
                 f'{m.get("icon","🔍")} {lbl}</span>')
         return o
-    def hl_body(body, amt):
+    def hl_body(body, amt, stype_="", ccy=""):
         r=esc(body)
-        if amt>=TIER_SMALL:
+        if stype_ == "foreign_bank" and amt > 0 and ccy:
+            for v in [f'{ccy}{amt:,.2f}', f'{ccy} {amt:,.2f}', f'{ccy}{amt:.2f}']:
+                try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
+                except (ValueError, TypeError): pass
+            for v in [f'{amt:,.2f}', f'{amt:.2f}']:
+                try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
+                except (ValueError, TypeError): pass
+        elif amt>=TIER_SMALL:
             for v in [f'{int(amt):,}', str(int(amt)), f'{amt:,.2f}']:
                 try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
                 except: pass
@@ -799,13 +1510,17 @@ def generate_html(sms_list, stats, out_path, tn=""):
         t=s["tier"] or ""; bdr=TIER_COL.get(t,"#cbd5e1"); bg=TIER_BG.get(t,"#f8fafc")
         ai=s.get("acct",{}); direction=s.get("direction","")
         TIER_EN_LBL={"high":"🔴 High (100K+)","med":"🟠 Medium (50K–100K)","small":"🟡 Small (10K–50K)"}
-        amt_tag=(f'<span class="amt-tag" style="background:{bdr}">💰 Tk {s["amount"]:,.2f}</span>'
-                 if s["amount"]>=TIER_SMALL else "")
+        _s_type = s.get("sender_type","")
+        _ccy    = s.get("currency","")
+        if _s_type == "foreign_bank" and s["amount"] > 0:
+            amt_tag = f'<span class="amt-tag" style="background:#0f766e">💳 {_ccy} {s["amount"]:,.2f}</span>'
+        else:
+            amt_tag=(f'<span class="amt-tag" style="background:{bdr}">💰 Tk {s["amount"]:,.2f}</span>'
+                     if s["amount"]>=TIER_SMALL else "")
         tier_badge=(f'<span class="rbadge" style="background:{bdr}">{TIER_EN_LBL.get(t,"")}</span>' if t else "")
         # MFS/Bank SMS: body-detected direction সবচেয়ে নির্ভরযোগ্য (SMSMT সব notification-এই আসে)
-        _stype = s.get("sender_type","")
         _acct_dir = ai.get("direction","") if ai else ""
-        if _stype in ("mfs","bank") and _acct_dir:
+        if _s_type in ("mfs","bank") and _acct_dir:
             _eff_dir = "IN" if _acct_dir=="Received" else "OUT"
         elif direction=="SMSMT":  _eff_dir = "IN"
         elif direction=="SMSMO":  _eff_dir = "OUT"
@@ -816,7 +1531,13 @@ def generate_html(sms_list, stats, out_path, tn=""):
         if _eff_dir=="IN":  dir_badge='<span class="dir-in">● IN</span>'
         elif _eff_dir=="OUT": dir_badge='<span class="dir-out">● OUT</span>'
         acct_mini=""
-        if ai and ai.get("service"):
+        if _s_type == "foreign_bank":
+            pts=[]
+            if ai and ai.get("service"): pts.append(f'<b>{ai["service"]}</b>')
+            if _ccy and s["amount"] > 0:  pts.append(f'<b style="color:#0f766e">{_ccy} {s["amount"]:,.2f}</b>')
+            if ai and ai.get("trx_id"):  pts.append(f'TrxID <code>{ai["trx_id"]}</code>')
+            if pts: acct_mini=f'<div class="acct-mini">{" &nbsp;·&nbsp; ".join(pts)}</div>'
+        elif ai and ai.get("service"):
             pts=[]
             if ai.get("direction"):    pts.append(f'<b>{ai["direction"]}</b>')
             if ai.get("other_number"): pts.append(f'📱 {ai["other_number"]}')
@@ -837,10 +1558,34 @@ def generate_html(sms_list, stats, out_path, tn=""):
             <div class="sc-right">{tier_badge}{amt_tag}</div>
           </div>
           {acct_mini}
-          <div class="sbody" style="background:{bg}">{hl_body(s["body"],s["amount"])}</div>
+          <div class="sbody" style="background:{bg}">{hl_body(s["body"],s["amount"],_s_type,_ccy)}</div>
           <div class="sc-foot">{cat_tags(s["categories"])}</div>
         </div>'''
     if not cards: cards='<div class="no-result"><div style="font-size:48px">✅</div><div>No SMS records found</div></div>'
+
+    # ── Foreign Transaction Summary block ──────────────────────────────────
+    ftxn_summary_html = ""
+    if _ftxn_all:
+        rows_html = ""
+        for ccy, d in _ftxn_by_ccy.items():
+            rows_html += (f'<div class="fts-row">'
+                          f'<span class="fts-ccy">{ccy}</span>'
+                          f'<span class="fts-val">{d["count"]} transactions</span>'
+                          f'<span class="fts-val" style="color:#0f766e;font-weight:700">'
+                          f'Total: {ccy} {d["total"]:,.2f}</span>'
+                          f'<span class="fts-val" style="color:#475569">'
+                          f'Max: {ccy} {d["max"]:,.2f}</span>'
+                          f'</div>')
+        hidden_note = (f'<div class="fts-note">Showing {len(_ftxn_show)} of {len(_ftxn_all)} transactions as cards. '
+                       f'{len(_ftxn_hidden)} hidden (summary only).</div>'
+                       if _ftxn_hidden else
+                       f'<div class="fts-note">All {len(_ftxn_all)} transactions shown as cards.</div>')
+        ftxn_summary_html = f'''
+        <div class="ftxn-summary" id="ftxn-summary">
+          <div class="fts-header">💳 Foreign Card Transaction Summary</div>
+          {rows_html}
+          {hidden_note}
+        </div>'''
     # Sidebar
     cat_sb=""
     for ck,meta in CAT_META.items():
@@ -855,9 +1600,29 @@ def generate_html(sms_list, stats, out_path, tn=""):
     bank_sb=""
     for svc,d in bank_summ.items():
         col=d["color"]; nums="".join(f'<div class="acct-num">📱 {n}</div>' for n in d["numbers"])
-        # txn_count=0 হলেও সব ব্যাংক দেখাবে যদি balance থাকে
-        if d["txn_count"] == 0 and d["last_balance"] == 0: continue
-        bal_html = f'<div class="ag-bal">💰 Last Balance: Tk {d["last_balance"]:,.2f}</div>' if d["last_balance"] else ""
+        if d["txn_count"] == 0 and d.get("display_balance",0) == 0 and d["last_balance"] == 0: continue
+        display_bal = d.get("display_balance", d["last_balance"])
+        is_multi    = d.get("multi_account", False)
+        accs        = d.get("accounts", {})
+
+        # Single account: last balance দেখাও
+        # Multi account: প্রতিটির balance আলাদা দেখাও
+        if is_multi and accs:
+            acc_rows = ""
+            for acc_no, av in sorted(accs.items()):
+                if av["balance"] > 0:
+                    acc_rows += (f'<div class="acc-row">'
+                                 f'<span class="acc-no">AC {esc(acc_no)}</span>'
+                                 f'<span class="acc-bal">BDT {av["balance"]:,.2f}</span>'
+                                 f'</div>')
+            bal_html = (f'<div class="ag-bal-multi">'
+                        f'<div class="ag-bal-hdr">💰 Account Balances</div>'
+                        f'{acc_rows}'
+                        f'</div>') if acc_rows else ""
+        else:
+            bal_html = (f'<div class="ag-bal">💰 Last Balance: Tk {display_bal:,.2f}</div>'
+                        if display_bal else "")
+
         bank_sb+=f'''<div class="acct-card" style="border-left:3px solid {col}">
           <div class="acct-svc" style="color:{col}">💳 {esc(svc)}</div>
           <div class="acct-grid4">
@@ -866,6 +1631,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
             <div class="ag-c"><div class="ag-v" style="color:#dc2626;font-size:11px">৳{d["total_out"]:,.0f}</div><div class="ag-l">Sent</div></div>
             <div class="ag-c"><div class="ag-v" style="color:#d97706;font-size:10px">৳{d["max_txn"]:,.0f}</div><div class="ag-l">Highest</div></div>
           </div>
+          {f'<div class="ag-cycling">🔄 Investment/Internal: ৳{d["total_cycling"]:,.0f} <span class="cyc-note">(Govt Sec/FDR/Transfer — excluded from IN/OUT)</span></div>' if d.get("total_cycling",0) > 0 else ""}
           {bal_html}
           {nums}</div>'''
     if not bank_sb: bank_sb='<div style="color:#9ca3af;font-size:11px;padding:4px 0">No MFS/Bank data</div>'
@@ -878,7 +1644,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
     fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
     if smsmt_count: pass  # SMSMT shown in summary only, not as filter button
     if smsmo_count: pass  # SMSMO shown in summary only, not as filter button
-    for ck in ["identity","love_family","travel","courier","chalan","education","bo_account","shopping","personal"]:
+    for ck in ["identity","love_family","travel","travel_txn","courier","chalan","education","bo_account","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
         meta=CAT_META.get(ck,{}); lbl=CAT_EN.get(ck,meta.get("label",ck))
@@ -986,6 +1752,21 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .rbadge{{font-size:9px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;letter-spacing:.5px}}
 .amt-tag{{color:#fff;font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 10px;border-radius:20px;font-weight:700}}
 .merged-tag{{background:#dbeafe;color:#1e40af;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:600;margin-left:5px}}
+.ag-bal-multi{{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:6px 8px;margin-top:6px}}
+.ag-bal-hdr{{font-size:10px;font-weight:700;color:#15803d;margin-bottom:4px}}
+.acc-row{{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:1px solid #dcfce7}}
+.acc-row:last-child{{border-bottom:none}}
+.acc-no{{font-family:'JetBrains Mono',monospace;font-size:10px;color:#374151}}
+.acc-bal{{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#15803d}}
+.ag-cycling{{background:#fefce8;border:1px solid #fde047;border-radius:5px;padding:4px 7px;margin-top:5px;font-size:10px;color:#854d0e}}
+.cyc-note{{color:#a16207;font-style:italic}}
+.ftxn-summary{{background:#f0fdfa;border:1px solid #99f6e4;border-left:4px solid #0f766e;border-radius:10px;padding:14px 18px;margin-bottom:12px}}
+.fts-header{{font-size:13px;font-weight:700;color:#0f766e;margin-bottom:10px}}
+.fts-row{{display:flex;gap:16px;align-items:center;padding:6px 0;border-bottom:1px solid #ccfbf1;flex-wrap:wrap}}
+.fts-row:last-of-type{{border-bottom:none}}
+.fts-ccy{{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#134e4a;min-width:40px}}
+.fts-val{{font-size:12px;font-family:'JetBrains Mono',monospace;color:#374151}}
+.fts-note{{font-size:10px;color:#6b7280;margin-top:8px;font-style:italic}}
 .dir-in{{background:#dcfce7;color:#15803d;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .dir-out{{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}}
 .acct-mini{{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;
@@ -1074,7 +1855,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
   </div>
   <div class="content">
     <div class="rh"><div class="rinfo">Showing: <span id="vc">{len(display_list)}</span> SMS records</div></div>
-    <div class="scards" id="cards">{cards}</div>
+    <div class="scards" id="cards">{ftxn_summary_html}{cards}</div>
   </div>
 </div>
 </div>
@@ -1115,15 +1896,25 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
         raw = [r for r in raw if is_related(r)]
 
     merged_ = merge(raw)
-    filtered_cnt = 0; results = []; seen = set()
+    filtered_cnt = 0; results = []; seen_keyed = set(); seen_body_only = set()
     for item in merged_:
         if not item["body"].strip(): continue
         if is_filtered(item["sender"], item["body"]): filtered_cnt+=1; continue
-        body_key = item["body"].strip()
-        dt_str   = str(item["date"])[:13]
-        dedup_key = (body_key, dt_str)
-        if dedup_key in seen: filtered_cnt+=1; continue
-        seen.add(dedup_key)
+        body_key  = item["body"].strip()
+        _dt       = to_dt(item["date"])
+        dt_min    = _dt.strftime('%Y%m%d%H%M') if _dt != datetime.min else str(item["date"])[:12]
+
+        _st = stype(item["sender"], body_key)
+        if _st in ("foreign_bank", "service", "other"):
+            # foreign_bank/service/other: body-only dedup
+            # (GP retry করে hourly, timestamp ভিন্ন হয়)
+            if body_key in seen_body_only: filtered_cnt+=1; continue
+            seen_body_only.add(body_key)
+        else:
+            # personal/bank/mfs: sender+body+minute dedup
+            dk = (item["sender"], body_key, dt_min)
+            if dk in seen_keyed: filtered_cnt+=1; continue
+            seen_keyed.add(dk)
         res = analyze_one(item["sender"], item["body"], item["date"], item.get("direction",""))
         if res:
             res["parts"] = item.get("parts",1)
@@ -1151,7 +1942,6 @@ def generate_docx(results, stats, tn=""):
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
-    import io
 
     CAT_LABEL = {
         "txn_high":"High Transaction (100K+)","txn_med":"Medium Transaction (50K-100K)",
