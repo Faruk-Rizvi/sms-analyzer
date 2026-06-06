@@ -334,6 +334,13 @@ st.markdown("""
 
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ── SESSION STATE init ───────────────────────────────────────
+if "result"      not in st.session_state: st.session_state.result      = None
+if "html_bytes"  not in st.session_state: st.session_state.html_bytes  = None
+if "docx_bytes"  not in st.session_state: st.session_state.docx_bytes  = None
+if "dl_name"     not in st.session_state: st.session_state.dl_name     = None
+if "file_name"   not in st.session_state: st.session_state.file_name   = None
+
 # ── ANALYSIS ─────────────────────────────────────────────────
 if analyze_btn:
     if not uploaded:
@@ -357,73 +364,94 @@ if analyze_btn:
             try: os.unlink(tmp_in)
             except: pass
 
-        tn_display = result.get("target_number","") or "All Numbers"
+        base_name = os.path.splitext(uploaded.name)[0]
+        tn_sfx    = f"_{result.get('target_number','')}" if result.get("target_number") else ""
+        dl_name   = f"{base_name}{tn_sfx}_intelligence_report.html"
 
-        # Result Banner
-        st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="result-banner">
-          <div class="rb-left">
-            <h3>✅ Analysis Complete</h3>
-            <p>Target: <strong style="color:#fff">{tn_display}</strong>
-               &nbsp;·&nbsp; File: <strong style="color:#fff">{uploaded.name}</strong></p>
-          </div>
-          <div class="rb-stats">
-            <div class="rs r"><div class="rs-num">{result.get("high",0)}</div><div class="rs-lbl">High (100K+)</div></div>
-            <div class="rs o"><div class="rs-num">{result.get("med",0)}</div><div class="rs-lbl">Medium (50K)</div></div>
-            <div class="rs a"><div class="rs-num">{result.get("small",0)}</div><div class="rs-lbl">Small (10K)</div></div>
-            <div class="rs"><div class="rs-num">{result.get("total_shown",0)}</div><div class="rs-lbl">Total Shown</div></div>
-            <div class="rs"><div class="rs-num">{result.get("total_sms",0)}</div><div class="rs-lbl">Total SMS</div></div>
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-        # Download
+        html_bytes = None
         if os.path.exists(tmp_html):
             with open(tmp_html,"rb") as f: html_bytes = f.read()
             try: os.unlink(tmp_html)
             except: pass
-            base_name = os.path.splitext(uploaded.name)[0]
-            tn_sfx = f"_{result.get('target_number','')}" if result.get("target_number") else ""
-            dl_name = f"{base_name}{tn_sfx}_intelligence_report.html"
 
-            # DOCX bytes (if generated)
-            docx_bytes = None
-            if os.path.exists(tmp_docx):
-                with open(tmp_docx,"rb") as f: docx_bytes = f.read()
-                try: os.unlink(tmp_docx)
-                except: pass
+        docx_bytes = None
+        if os.path.exists(tmp_docx):
+            with open(tmp_docx,"rb") as f: docx_bytes = f.read()
+            try: os.unlink(tmp_docx)
+            except: pass
 
-            if docx_bytes:
-                c1, c2, c3 = st.columns([1, 1, 1])
-                with c1:
-                    st.download_button(
-                        label="⬇️  HTML Report",
-                        data=html_bytes,
-                        file_name=dl_name,
-                        mime="text/html",
-                        use_container_width=True,
-                    )
-                with c2:
-                    st.download_button(
-                        label="📄  Word (.docx) Report",
-                        data=docx_bytes,
-                        file_name=dl_name.replace(".html", ".docx"),
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True,
-                    )
-            else:
-                c1,c2,c3 = st.columns([1,2,1])
-                with c2:
-                    st.download_button(
-                        label="⬇️   Download HTML Intelligence Report",
-                        data=html_bytes,
-                        file_name=dl_name,
-                        mime="text/html",
-                        use_container_width=True,
-                    )
-            st.markdown("""
-            <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
-              ℹ️ The HTML report also contains a built-in Download button for offline saving.
-            </div>""", unsafe_allow_html=True)
+        # session_state-এ save — download button click করলেও হারাবে না
+        st.session_state.result     = result
+        st.session_state.html_bytes = html_bytes
+        st.session_state.docx_bytes = docx_bytes
+        st.session_state.dl_name    = dl_name
+        st.session_state.file_name  = uploaded.name
 
-        st.markdown('</div>', unsafe_allow_html=True)
+# ── RESULT (session_state থেকে — সবসময় দেখাবে) ──────────────
+if st.session_state.result:
+    result     = st.session_state.result
+    html_bytes = st.session_state.html_bytes
+    docx_bytes = st.session_state.docx_bytes
+    dl_name    = st.session_state.dl_name
+    fname      = st.session_state.file_name
+
+    tn_display = result.get("target_number","") or "All Numbers"
+
+    # Result Banner
+    st.markdown('<div class="main-wrap" style="padding-top:0">', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="result-banner">
+      <div class="rb-left">
+        <h3>✅ Analysis Complete</h3>
+        <p>Target: <strong style="color:#fff">{tn_display}</strong>
+           &nbsp;·&nbsp; File: <strong style="color:#fff">{fname}</strong></p>
+      </div>
+      <div class="rb-stats">
+        <div class="rs r"><div class="rs-num">{result.get("high",0)}</div><div class="rs-lbl">High (100K+)</div></div>
+        <div class="rs o"><div class="rs-num">{result.get("med",0)}</div><div class="rs-lbl">Medium (50K)</div></div>
+        <div class="rs a"><div class="rs-num">{result.get("small",0)}</div><div class="rs-lbl">Small (10K)</div></div>
+        <div class="rs"><div class="rs-num">{result.get("total_shown",0)}</div><div class="rs-lbl">Total Shown</div></div>
+        <div class="rs"><div class="rs-num">{result.get("total_sms",0)}</div><div class="rs-lbl">Total SMS</div></div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # Download buttons — session_state-এ আছে তাই reload-এও থাকবে
+    if html_bytes:
+        if docx_bytes:
+            c1, c2, c3 = st.columns([1, 1, 1])
+            with c1:
+                st.download_button(
+                    label="⬇️  HTML Report",
+                    data=html_bytes,
+                    file_name=dl_name,
+                    mime="text/html",
+                    use_container_width=True,
+                    key="dl_html",
+                )
+            with c2:
+                st.download_button(
+                    label="📄  Word (.docx) Report",
+                    data=docx_bytes,
+                    file_name=dl_name.replace(".html", ".docx"),
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    key="dl_docx",
+                )
+        else:
+            c1, c2, c3 = st.columns([1,2,1])
+            with c2:
+                st.download_button(
+                    label="⬇️   Download HTML Intelligence Report",
+                    data=html_bytes,
+                    file_name=dl_name,
+                    mime="text/html",
+                    use_container_width=True,
+                    key="dl_html_only",
+                )
+
+    st.markdown("""
+    <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
+      ℹ️ The HTML report also contains a built-in Download button for offline saving.
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
