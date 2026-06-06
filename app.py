@@ -344,8 +344,10 @@ if analyze_btn:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(uploaded.read()); tmp_in = tmp.name
             tmp_html = tempfile.mktemp(suffix=".html")
+            tmp_docx = tempfile.mktemp(suffix=".docx")
             try:
                 result = process_file(tmp_in, tmp_html,
+                                      docx_out=tmp_docx,
                                       target_number=target_num.strip() if target_num else "")
             except Exception as e:
                 st.error(f"❌ Analysis failed: {e}")
@@ -384,15 +386,41 @@ if analyze_btn:
             tn_sfx = f"_{result.get('target_number','')}" if result.get("target_number") else ""
             dl_name = f"{base_name}{tn_sfx}_intelligence_report.html"
 
-            c1,c2,c3 = st.columns([1,2,1])
-            with c2:
-                st.download_button(
-                    label="⬇️   Download HTML Intelligence Report",
-                    data=html_bytes,
-                    file_name=dl_name,
-                    mime="text/html",
-                    use_container_width=True,
-                )
+            # DOCX bytes (if generated)
+            docx_bytes = None
+            if os.path.exists(tmp_docx):
+                with open(tmp_docx,"rb") as f: docx_bytes = f.read()
+                try: os.unlink(tmp_docx)
+                except: pass
+
+            if docx_bytes:
+                c1, c2, c3 = st.columns([1, 1, 1])
+                with c1:
+                    st.download_button(
+                        label="⬇️  HTML Report",
+                        data=html_bytes,
+                        file_name=dl_name,
+                        mime="text/html",
+                        use_container_width=True,
+                    )
+                with c2:
+                    st.download_button(
+                        label="📄  Word (.docx) Report",
+                        data=docx_bytes,
+                        file_name=dl_name.replace(".html", ".docx"),
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True,
+                    )
+            else:
+                c1,c2,c3 = st.columns([1,2,1])
+                with c2:
+                    st.download_button(
+                        label="⬇️   Download HTML Intelligence Report",
+                        data=html_bytes,
+                        file_name=dl_name,
+                        mime="text/html",
+                        use_container_width=True,
+                    )
             st.markdown("""
             <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:10px">
               ℹ️ The HTML report also contains a built-in Download button for offline saving.
