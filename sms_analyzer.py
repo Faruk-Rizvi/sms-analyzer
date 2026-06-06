@@ -196,6 +196,8 @@ NAMED_PROMO_SENDERS = {
     'aryan city', 'aryancity',                       # real estate
     'tuitionmate', 'tutorclub', 'tutorhunt',          # tutor platforms
     'manyavar bd', 'manyavar',                        # fashion brand
+    'goongoon', 'jhotpotloan',                        # telecom promo
+    'udvash',                                         # coaching promo (not OTP)
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
