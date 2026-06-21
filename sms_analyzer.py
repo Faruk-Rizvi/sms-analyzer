@@ -44,6 +44,11 @@ FOREIGN_BANK_BODY_RE = re.compile(
 
 def is_foreign_bank(sender, body=''):
     sl = str(sender).lower().strip()
+    # SBIBNK with BDT = SBI Bangladesh branch — NOT foreign
+    if sl == 'sbibnk':
+        if body and re.search(r'\bbdt\b', body, re.I):
+            return False
+        return False  # SBIBNK সবসময় বাংলাদেশের SBI শাখা হিসেবে ধরা হবে
     if any(k in sl for k in FOREIGN_BANK_KW): return True
     if body and FOREIGN_BANK_BODY_RE.search(body): return True
     return False
@@ -93,7 +98,7 @@ BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'union bank','unionbank',                      # Union Bank (Islamic)
              'global islami','globalislami',                # Global Islami Bank
              # ── মিসিং বেসরকারি ব্যাংক (বাগ ৮) ───────────────────
-             'mercantile bank','mercanbank','mercentilebank', # Mercantile Bank
+             'mercantile bank','mercanbank','mercentilebank','mercantile', # Mercantile Bank
              'one bank','onebank',                          # ONE Bank
              'nrb bank','nrbbank','nrb commercial',         # NRB Bank / NRB Commercial
              'midland bank','midlandbank',                  # Midland Bank
@@ -104,6 +109,7 @@ BANK_KW   = ['ibbl','ibbl .','ibbl.','islamibank','islami bank',
              'modhumoti bank','modhumotibank',              # Modhumoti Bank
              'shimanto bank','shimanto',                    # Shimanto Bank
              'bengal commercial',                           # Bengal Commercial Bank
+             'sbibnk','sbi bangladesh','state bank of india', # SBI Bangladesh branch
              ]
 
 # Short-code senders that are actually banks (not to be filtered)
@@ -175,6 +181,7 @@ PROMO_NUMBERS = {
     '8801540400015','01540400015',   # ৫তারকা হোটেল শেয়ার বিক্রয়
     '8801537275871','01537275871',   # Land/property listing (=Katha>Purbachal)
     '8801713002610','01713002610',   # UMCH property/land listing
+    '8801847050242','01847050242',   # ব্যক্তিগত নম্বর — ব্লক করা হয়েছে
 }
 
 # OTP sender names — always filter
@@ -198,6 +205,7 @@ NAMED_PROMO_SENDERS = {
     'manyavar bd', 'manyavar',                        # fashion brand
     'goongoon', 'jhotpotloan',                        # telecom promo
     'udvash',                                         # coaching promo (not OTP)
+    'apanjewelrs', 'apanjwewlers', 'apan jewelrs', 'apan jewellers',  # jewelry promo
 }
 
 SVC_KW    = ['desco','dpdc','breb','titas','wasa','aarong','brac','daraz','chaldal',
@@ -357,9 +365,31 @@ SKIP_BODY_RE = re.compile(
     r"|citizenship\s*(?:in|program).*(?:new\s*zealand|turkey|portugal|malta|caribbean)"
     r"|immigration\s*lawyer.*dhaka|meet.*immigration.*(?:lawyer|consultant)"
 
-    # Political campaign / election appeal
-    r"|নির্বাচিত\s*হলে.*(?:আমানত|জীবন|দেশ|সেবা)|ভোট\s*দিন|ভোট\s*চাই"
+    # Political / association election campaign — ভোট চাওয়ার আবেদন (SCBA, DBA, DTBA, ইত্যাদি)
+    r"|নির্বাচিত\s*হলে.*(?:আমানত|জীবন|দেশ|সেবা)|ভোট\s*দিন|ভোট\s*চাই|ভোট\s*ও\s*দোয়া"
+    r"|ভোটও\s*দোয়া|ভোট\s*প্রার্থী|ভোটপ্রার্থী|ভোট\s*প্রার্থনা|ভোট\s*কামনা"
+    r"|ভোট\s*ও\s*সমর্থন|আপনার\s*ভোট|মূল্যবান\s*ভোট|ভোট\s*ও\s*আশীর্বাদ"
+    r"|পদপ্রার্থী|পদ\s*প্রার্থী|প্রার্থী.*(?:নির্বাচন|ব্যালট)|ব্যালট.*প্রার্থী"
+    r"|নির্বাচনে.*(?:সদস্য|সম্পাদক|সভাপতি|সহ-সভাপতি|ট্রেজারার|কোষাধ্যক্ষ).*পদে"
     r"|(?:support|doa|vote).*(?:election|নির্বাচন)|seeking\s*your\s*kind\s*support.*(?:me\s*for|election)"
+    r"|cast\s*your\s*(?:valuable\s*)?vote|valuable\s*vote|kind\s*support.*vote"
+    r"|(?:candidate|ballot)\s*(?:no\.?|#|number)?\s*\d*.*(?:election|নির্বাচন)"
+    r"|election.*(?:candidate|ballot)|ballot\s*(?:no\.?|#)\s*\d+"
+    r"|(?:secretary|president|treasurer|member|vice-president)\s*candidate"
+    r"|seeking\s*your\s*(?:valuable\s*)?vote|humbly\s*(?:seek|request|solicit)"
+    r"|solicit\s*(?:your|ur)\s*(?:blessing|vote|support)"
+    r"|(?:scba|dba|dtba)\s*(?:election|নির্বাচন)|(?:election|নির্বাচন).*(?:scba|dba|dtba)"
+    r"|voter\s*(?:no|number|id)[:\s]*\d+|আপনার\s*ভোটাধিকার"
+    r"|elected\s*as\s*(?:a|an)?\s*(?:member|secretary|president)"
+    r"|(?:thanks|gratitude).*(?:vote|support).*(?:election|elect)"
+    r"|(?:highest|valuable)\s*vote(?:s)?\s*(?:of|for|in)|voted\s*for\s*me"
+    r"|trust,?\s*blessings\s*&\s*electing|electing\s*me\s*as"
+    r"|your\s*voter\s*no[:\.\s]*\d+|voter\s*no\.?\s*(?:is)?[:\s-]*\d+"
+    r"|ভোটার\s*তালিকা|ভোটার\s*নম্বর|নাম\s*কর্তন\s*এড়াতে"
+    r"|ভোটে\s*নির্বাচিত|নির্বাচিত\s*করায়\s*কৃতজ্ঞ|সর্বোচ্চ\s*ভোটে"
+    r"|seek.*support.*(?:and|&)\s*vote|seeking.*support.*(?:and|&)\s*vote"
+    r"|\(?dba\s*news\)?[:\s]|dba\s*news\b"
+    r"|আঞ্জুমান|যাকাত\s*ও\s*সাদাকা|যাকাত.*সাদাকা|সাদাকা.*যাকাত"
 
     # AGM / shareholder notices
     r"|(?:\d+(?:st|nd|rd|th)\s+agm|annual\s+general\s+meeting).*(?:plc|ltd|limited|company)"
@@ -700,7 +730,7 @@ TXN_P = [
     r'[Aa]mount[:\s]+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Dd]eposit\s+[Aa]mount[:\s]+([\d,]+\.?\d*)',
     r'transfer(?:red)?\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
-    r'[Pp]ayment\s+of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    r'[Pp]ayment\s+(?:of\s+)?[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+to',
     r'[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+has\s+been\s+(?:deposited|withdrawn|transferred|credited|debited)',
     r'[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+(?:withdrawn|credited|deposited)\s+(?:from|to)',
     r'[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+has\s+been\s+credited\s+to',
@@ -1007,7 +1037,8 @@ def analyze_one(sender, body, date, direction=""):
     # MFS/Bank — tier নেই → sidebar summary
     if st in ("mfs","bank") and not t:
         acct_tmp = get_acct(sender, body, amt)
-        if acct_tmp.get("balance",0) > 0 or amt > 0:
+        is_balance_sms = bool(re.search(r'\bbalance\b', body, re.I))
+        if acct_tmp.get("balance",0) > 0 or amt > 0 or (is_balance_sms and acct_tmp.get("service")):
             cats.append("bank_info")   # sidebar only
         # bank shortcode থেকে courier/travel/service SMS আসতে পারে (e.g. 16247 = bKash courier relay)
         elif COURIER_RE.search(body):  cats.append("courier")
@@ -1062,6 +1093,7 @@ def get_acct(sender, body, amt):
     if s == "16216": info["service"] = "Dutch-Bangla Bank (DBBL)"
     elif s == "16219": info["service"] = "Mutual Trust Bank (MTB)"
     elif re.match(r'^mtb\.?\s*$', sl): info["service"] = "Mutual Trust Bank (MTB)"
+    elif re.match(r'^\[?\s*!\s*\]?$', s): info["service"] = "Dutch-Bangla Bank (DBBL)"
 
     # Sender keyword detect
     if not info["service"]:
@@ -1151,6 +1183,10 @@ def get_acct(sender, body, amt):
     if not bal: bal = re.search(r'[Bb]alance[:\s]+BDT\s+([\d,]+\.?\d*)', body)
     # General: "Balance Tk/TK X" or "Bal: X"
     if not bal: bal = re.search(r'[Bb]al(?:ance)?[:\s\.]+[Tt]?[Kk]?\.?\s*([\d,]+\.?\d*)', body)
+    # Jamuna Bank: "Yearend Balance...was BDT 802.88 as on"
+    if not bal: bal = re.search(r'[Bb]alance.*?\bwas\s+BDT\s+([\d,]+\.?\d*)', body, re.I)
+    # Mercantile Bank: "balance on 31.12.2025 is 0.00"
+    if not bal: bal = re.search(r'balance\s+on\s+[\d./]+\s+is\s+([\d,]+\.?\d*)', body, re.I)
     if bal:
         try: info["balance"]=float(bal.group(1).replace(',',''))
         except (ValueError, AttributeError): pass
@@ -1158,6 +1194,9 @@ def get_acct(sender, body, amt):
     # Account number — masked format (EBL: "AC 116***957", BRAC: "A/C#10656**0001")
     acc_m = re.search(r'AC\s+([\d\*]+(?:\d|\*))', body, re.I)
     if not acc_m: acc_m = re.search(r'A/C\s*#?\s*([\d\*]+(?:\d|\*))', body, re.I)
+    # SBI format: "A/c. ID: XXXXX89781XX00" or "SBI account XXXXX89781XX00"
+    if not acc_m: acc_m = re.search(r'A/c\.?\s*ID[:\s]+([A-Z\d]+)', body, re.I)
+    if not acc_m: acc_m = re.search(r'SBI\s+account\s+([A-Z\d]+)', body, re.I)
     if acc_m:
         # trailing asterisks বাদ দিই — "857**00008501**" → "857**00008501"
         info["account"] = re.sub(r'\*+$', '', acc_m.group(1))
@@ -1213,7 +1252,8 @@ def get_acct(sender, body, amt):
                    r'|interest\s+peyechhen|interest\s+পেয়েছেন', bl2):
         info["direction"] = "Received"
     elif re.search(r'\bcash\s*out\b|\bpurchase\b|\bpos\s+purchase\b'
-                   r'|\bpayment\s+of\b|\bpaid\b|\bsend\s+money\b|\bsent\b'
+                   r'|\bpayment\s+(?:of\s+)?tk.*to\b|\bpayment\s+of\b|\bpaid\b'
+                   r'|\bsend\s+money\b|\bsent\b'
                    r'|\bpay\s*bill\b|\brequest\s+of\s+tk.*processed'
                    r'|ক্যাশ\s*আউট|পাঠিয়েছেন|উত্তোলন\s*করেছেন', bl2):
         info["direction"] = "Sent"
@@ -1419,6 +1459,7 @@ def build_bank_summary(sms_list, extra_balances=None):
         if not ai or not ai.get("service"): continue
         svc = ai["service"]; d = summ[svc]
         d["service"] = svc
+        d["seen"] = True   # এই bank-এর অন্তত একটি SMS পাওয়া গেছে — sidebar-এ দেখাও
 
         amt = ai.get("amount",0) or 0
         if amt > 0:
@@ -1659,7 +1700,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
     bank_sb=""
     for svc,d in bank_summ.items():
         col=d["color"]; nums="".join(f'<div class="acct-num">📱 {n}</div>' for n in d["numbers"])
-        if d["txn_count"] == 0 and d.get("display_balance",0) == 0 and d["last_balance"] == 0: continue
+        if d["txn_count"] == 0 and d.get("display_balance",0) == 0 and d["last_balance"] == 0 and not d.get("seen"): continue
         display_bal = d.get("display_balance", d["last_balance"])
         is_multi    = d.get("multi_account", False)
         accs        = d.get("accounts", {})
