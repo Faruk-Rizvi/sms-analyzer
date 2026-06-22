@@ -2062,19 +2062,24 @@ function apply(){{
 }}
 
 function _syncBtnStates(){{
-  // Tier / cat / dir buttons
+  const allEmpty = selTiers.size===0 && selCats.size===0 && selDirs.size===0;
   document.querySelectorAll('.fbtn').forEach(b=>{{
-    const t=b.dataset.tier, cat=b.dataset.cat, dir=b.dataset.dir, all=b.dataset.all;
-    if(all) b.classList.toggle('active', selTiers.size===0 && selCats.size===0 && selDirs.size===0);
-    else if(t)   b.classList.toggle('active', selTiers.has(t));
-    else if(cat) b.classList.toggle('active', selCats.has(cat));
-    else if(dir) b.classList.toggle('active', selDirs.has(dir));
+    if(b.dataset.all!==undefined && b.dataset.all!==null && 'all' in b.dataset) {{
+      b.classList.toggle('active', allEmpty);
+    }} else if('tier' in b.dataset) {{
+      b.classList.toggle('active', selTiers.has(b.dataset.tier));
+    }} else if('cat' in b.dataset) {{
+      b.classList.toggle('active', selCats.has(b.dataset.cat));
+    }} else if('dir' in b.dataset) {{
+      b.classList.toggle('active', selDirs.has(b.dataset.dir));
+    }}
   }});
-  // Month buttons
   document.querySelectorAll('.mbtn').forEach(b=>{{
-    const all=b.dataset.all, m=b.dataset.month;
-    if(all) b.classList.toggle('active', selMonths.size===0);
-    else if(m) b.classList.toggle('active', selMonths.has(m));
+    if('all' in b.dataset) {{
+      b.classList.toggle('active', selMonths.size===0);
+    }} else if('month' in b.dataset) {{
+      b.classList.toggle('active', selMonths.has(b.dataset.month));
+    }}
   }});
 }}
 
