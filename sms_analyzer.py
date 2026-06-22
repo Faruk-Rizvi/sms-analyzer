@@ -1774,22 +1774,24 @@ def generate_html(sms_list, stats, out_path, tn=""):
           {bal_html}
           {nums}</div>'''
     if not bank_sb: bank_sb='<div style="color:#9ca3af;font-size:11px;padding:4px 0">No MFS/Bank data</div>'
-    def fb(lbl,js,col=None):
+    def fb(lbl,js,col=None,data=""):
         st=f' style="border-color:{col}"' if col else ""
-        return f'<button class="fbtn"{st} onclick="{js}">{lbl}</button>'
-    fbtns =f'<button class="fbtn active" onclick="fAll(this)">All ({len(display_list)})</button>'
-    fbtns+=fb(f'🔴 High ({tier_cnt.get("high",0)})',"fTier(this,'high')","#991b1b")
-    fbtns+=fb(f'🟠 Medium ({tier_cnt.get("med",0)})',"fTier(this,'med')","#dc2626")
-    fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c")
-    if smsmt_count: pass  # SMSMT shown in summary only, not as filter button
-    if smsmo_count: pass  # SMSMO shown in summary only, not as filter button
+        return f'<button class="fbtn"{st} onclick="{js}" {data}>{lbl}</button>'
+    fbtns =f'<button class="fbtn active" data-all="1" onclick="fAll(this)">All ({len(display_list)})</button>'
+    fbtns+=fb(f'🔴 High ({tier_cnt.get("high",0)})',"fTier(this,'high')","#991b1b","data-tier='high'")
+    fbtns+=fb(f'🟠 Medium ({tier_cnt.get("med",0)})',"fTier(this,'med')","#dc2626","data-tier='med'")
+    fbtns+=fb(f'🟡 Small ({tier_cnt.get("small",0)})',"fTier(this,'small')","#ea580c","data-tier='small'")
+    if smsmt_count: pass
+    if smsmo_count: pass
     for ck in ["identity","love_family","travel","travel_txn","courier","chalan","education","bo_account","shopping","personal"]:
         c=cat_cnt.get(ck,0)
         if not c: continue
         meta=CAT_META.get(ck,{}); lbl=CAT_EN.get(ck,meta.get("label",ck))
-        fbtns+=fb(f'{meta.get("icon","")} {lbl} ({c})',f"fCat(this,'{ck}')",meta.get("color"))
-    mbtns="".join(f'<button class="mbtn" onclick="fMonth(this,\'{m}\')">'
-                  f'{MONTH_EN.get(m.split("-")[1],m)} {m.split("-")[0]} ({mnt_cnt[m]})</button>' for m in months)
+        fbtns+=fb(f'{meta.get("icon","")} {lbl} ({c})',f"fCat(this,'{ck}')",meta.get("color"),f"data-cat='{ck}'")
+    mbtns="".join(
+        f'<button class="mbtn" data-month="{m}" onclick="fMonth(this,\'{m}\')">'
+        f'{MONTH_EN.get(m.split("-")[1],m)} {m.split("-")[0]} ({mnt_cnt[m]})</button>'
+        for m in months)
     tnb=f'<div class="tnbadge">📱 {esc(tn)}</div>' if tn else ""
 
     html=f'''<!DOCTYPE html>
@@ -1869,6 +1871,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .fbtn:hover,.mbtn:hover{{border-color:#c0392b;color:#c0392b;background:#fef2f2}}
 .fbtn.active{{background:#1a1a2e;border-color:#1a1a2e;color:#fff;font-weight:600}}
 .mbtn.active{{background:#c0392b;border-color:#c0392b;color:#fff;font-weight:600}}
+.fbar-hint{{font-size:10px;color:#9ca3af;margin-left:4px;white-space:nowrap}}
 .fsep{{width:1px;height:20px;background:#e2e8f0;margin:0 3px}}
 .sbox{{margin-left:auto;padding:5px 12px;background:#f8fafc;border:1.5px solid #e2e8f0;
   border-radius:20px;color:#1a1a2e;font-size:11px;outline:none;width:210px}}
@@ -1954,6 +1957,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
     <div class="cfbadge">CONFIDENTIAL</div>
     {tnb}
     <button class="dl-top" onclick="downloadHTML()">⬇️ Download HTML</button>
+    <button class="dl-top" onclick="downloadWord()" id="word-btn">📄 Download Word</button>
     <button class="dl-top" onclick="window.print()" style="margin-left:0">🖨 Print</button>
   </div>
 </div>
@@ -2001,10 +2005,11 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 <div style="display:flex;flex-direction:column;">
   <div class="fbar">
     <span class="flbl">Filter:</span>
+    <span class="fbar-hint">✦ multiple select</span>
     {fbtns}
     <div class="fsep"></div>
     <span class="flbl">Month:</span>
-    <button class="mbtn active" onclick="fMonthAll(this)">All</button>
+    <button class="mbtn active" data-all="1" onclick="fMonthAll(this)">All</button>
     {mbtns}
     <input class="sbox" type="text" placeholder="🔍 Search messages..." oninput="fSearch(this.value)">
   </div>
@@ -2029,16 +2034,273 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 <script>
 const allC=document.querySelectorAll('.scard');
 let aT='all',aCat='all',aM='all',aD='all',sQ='';
-function apply(){{let v=0;allC.forEach(c=>{{if(c.classList.contains('deleted'))return;const ok=(aT==='all'||c.dataset.tier===aT)&&(aCat==='all'||(c.dataset.cats||'').includes(aCat))&&(aM==='all'||c.dataset.month===aM)&&(aD==='all'||c.dataset.dir===aD)&&(!sQ||c.innerText.toLowerCase().includes(sQ.toLowerCase()));c.style.display=ok?'':'none';if(ok)v++;}});document.getElementById('vc').textContent=v;}}
-function act(b,sel){{document.querySelectorAll(sel).forEach(x=>x.classList.remove('active'));b.classList.add('active');}}
-function fAll(b){{aT='all';aCat='all';aD='all';act(b,'.fbtn');apply();}}
-function fTier(b,t){{aT=t;aCat='all';aD='all';act(b,'.fbtn');apply();}}
-function fCat(b,c){{aCat=c;aT='all';aD='all';act(b,'.fbtn');apply();}}
-function fDir(b,d){{aD=d;aT='all';aCat='all';act(b,'.fbtn');apply();}}
-function fMonthAll(b){{aM='all';act(b,'.mbtn');apply();}}
-function fMonth(b,m){{aM=m;act(b,'.mbtn');apply();}}
+// ── Multi-select filter engine ─────────────────────────────────────────────
+let selTiers=new Set(),selCats=new Set(),selMonths=new Set(),selDirs=new Set(),sQ='';
+
+function apply(){{
+  let v=0;
+  allC.forEach(c=>{{
+    if(c.classList.contains('deleted'))return;
+    const tier=c.dataset.tier||'';
+    const cats=c.dataset.cats||'';
+    const month=c.dataset.month||'';
+    const dir=c.dataset.dir||'';
+    const txt=c.innerText.toLowerCase();
+
+    const okTier  = selTiers.size===0   || selTiers.has(tier);
+    const okCat   = selCats.size===0    || [...selCats].some(x=>cats.includes(x));
+    const okMonth = selMonths.size===0  || selMonths.has(month);
+    const okDir   = selDirs.size===0    || selDirs.has(dir);
+    const okSrch  = !sQ                 || txt.includes(sQ.toLowerCase());
+
+    const ok = okTier && okCat && okMonth && okDir && okSrch;
+    c.style.display=ok?'':'none';
+    if(ok)v++;
+  }});
+  document.getElementById('vc').textContent=v;
+  _syncBtnStates();
+}}
+
+function _syncBtnStates(){{
+  // Tier / cat / dir buttons
+  document.querySelectorAll('.fbtn').forEach(b=>{{
+    const t=b.dataset.tier, cat=b.dataset.cat, dir=b.dataset.dir, all=b.dataset.all;
+    if(all) b.classList.toggle('active', selTiers.size===0 && selCats.size===0 && selDirs.size===0);
+    else if(t)   b.classList.toggle('active', selTiers.has(t));
+    else if(cat) b.classList.toggle('active', selCats.has(cat));
+    else if(dir) b.classList.toggle('active', selDirs.has(dir));
+  }});
+  // Month buttons
+  document.querySelectorAll('.mbtn').forEach(b=>{{
+    const all=b.dataset.all, m=b.dataset.month;
+    if(all) b.classList.toggle('active', selMonths.size===0);
+    else if(m) b.classList.toggle('active', selMonths.has(m));
+  }});
+}}
+
+function fAll(b){{
+  selTiers.clear(); selCats.clear(); selDirs.clear();
+  apply();
+}}
+
+function fTier(b,t){{
+  if(selTiers.has(t)) selTiers.delete(t);
+  else selTiers.add(t);
+  apply();
+}}
+
+function fCat(b,c){{
+  if(selCats.has(c)) selCats.delete(c);
+  else selCats.add(c);
+  apply();
+}}
+
+function fDir(b,d){{
+  if(selDirs.has(d)) selDirs.delete(d);
+  else selDirs.add(d);
+  apply();
+}}
+
+function fMonthAll(b){{
+  selMonths.clear();
+  apply();
+}}
+
+function fMonth(b,m){{
+  if(selMonths.has(m)) selMonths.delete(m);
+  else selMonths.add(m);
+  apply();
+}}
+
 function fSearch(v){{sQ=v;apply();}}
 function downloadHTML(){{const blob=new Blob([document.documentElement.outerHTML],{{type:'text/html'}});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SMS_Intelligence_Report_{esc(tn) if tn else "report"}.html';a.click();}}
+
+// ── Word (docx.js) ──────────────────────────────────────────────────────────
+function downloadWord(){{
+  const btn=document.getElementById('word-btn');
+  btn.textContent='⏳ Generating...'; btn.disabled=true;
+  // Load docx.js from CDN
+  if(!window.docx){{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/docx@8/build/index.js';
+    s.onload=()=>_buildWord(btn);
+    s.onerror=()=>{{ btn.textContent='❌ No Internet'; btn.disabled=false; }};
+    document.head.appendChild(s);
+  }} else {{ _buildWord(btn); }}
+}}
+
+function _buildWord(btn){{
+  const {{Document,Packer,Table,TableRow,TableCell,Paragraph,TextRun,
+          HeadingLevel,WidthType,BorderStyle,AlignmentType,
+          TableLayoutType,VerticalAlign,ShadingType}}=docx;
+
+  // ── Collect visible (non-deleted) cards ────────────────────────────────
+  const cards=[...document.querySelectorAll('.scard')].filter(c=>
+    !c.classList.contains('deleted') && c.style.display!=='none'
+  );
+
+  const tn_val='{esc(tn)}';
+  const now_str=new Date().toLocaleString('en-BD',{{dateStyle:'long',timeStyle:'short'}});
+
+  // ── Helper styles ────────────────────────────────────────────────────────
+  const H=h=>new HeadingLevel[Object.keys(HeadingLevel)[h-1]]||HeadingLevel.HEADING_2;
+  const rgb=(h)=>{{const n=parseInt(h,16);return {{r:(n>>16)&255,g:(n>>8)&255,b:n&255}}}};
+  const shading=(fill)=>{{const c=rgb(fill);return{{type:ShadingType.CLEAR,fill:`#${{fill}}`}}}};
+
+  function cell(text, opts={{}}){{
+    const fill=opts.fill||'FFFFFF'; const bold=opts.bold||false;
+    const color=opts.color||'111111'; const sz=(opts.size||10)*2;
+    const align=opts.align||AlignmentType.LEFT; const width=opts.width||2;
+    return new TableCell({{
+      shading:shading(fill),
+      width:{{size:Math.round(width*568),type:WidthType.DXA}},
+      verticalAlign:VerticalAlign.TOP,
+      borders:{{top:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
+                bottom:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
+                left:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
+                right:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}}}},
+      children:[new Paragraph({{
+        alignment:align,
+        children:[new TextRun({{text:String(text||''),bold,size:sz,color,font:'Arial'}})],
+      }})],
+    }});
+  }}
+
+  function hdrCell(text, width){{
+    return cell(text,{{fill:'D6E4F0',bold:true,color:'1A1A2E',size:9,
+                       align:AlignmentType.CENTER,width}});
+  }}
+
+  function secHeading(num, title){{
+    return new Paragraph({{
+      spacing:{{before:240,after:80}},
+      border:{{bottom:{{style:BorderStyle.SINGLE,size:4,color:'C0392B',space:1}}}},
+      children:[
+        new TextRun({{text:`${{num}}. `,bold:true,size:28,color:'C0392B',font:'Arial'}}),
+        new TextRun({{text:title,bold:true,size:28,color:'1A1A2E',font:'Arial'}}),
+      ],
+    }});
+  }}
+
+  // ── Build bank summary from sidebar cards ───────────────────────────────
+  const bankRows=[];
+  document.querySelectorAll('.acct-card').forEach(ac=>{{
+    const svc=ac.querySelector('.acct-svc')?.textContent?.replace('💳','').trim()||'';
+    const nums=[...ac.querySelectorAll('.ag-v')].map(v=>v.textContent.trim());
+    const bal=ac.querySelector('.ag-bal')?.textContent?.replace('💰','').trim()||'';
+    if(svc) bankRows.push({{svc,txn:nums[0]||'0',recv:nums[1]||'0',sent:nums[2]||'0',max:nums[3]||'0',bal:bal.replace('Last Balance:','').trim()}});
+  }});
+
+  const bankHdrs=['Bank / MFS Service','Txn Count','Total Received (IN)','Total Sent (OUT)','Max Transaction','Last Balance'];
+  const bankWidths=[3.5,1.8,2.8,2.8,2.8,2.8];
+  const bankTableRows=[new TableRow({{children:bankHdrs.map((h,i)=>hdrCell(h,bankWidths[i]))}})];
+  bankRows.forEach((r,idx)=>{{
+    const bg=idx%2===0?'FFFFFF':'F5F5F5';
+    bankTableRows.push(new TableRow({{children:[
+      cell(r.svc,{{fill:bg,bold:true,color:'1A1A2E',size:9,width:bankWidths[0]}}),
+      cell(r.txn,{{fill:bg,color:'444444',size:9,align:AlignmentType.CENTER,width:bankWidths[1]}}),
+      cell(r.recv,{{fill:bg,color:'1A7A4A',size:9,align:AlignmentType.RIGHT,width:bankWidths[2]}}),
+      cell(r.sent,{{fill:bg,color:'CC2200',size:9,align:AlignmentType.RIGHT,width:bankWidths[3]}}),
+      cell(r.max,{{fill:bg,color:'7A5A00',size:9,align:AlignmentType.RIGHT,width:bankWidths[4]}}),
+      cell(r.bal,{{fill:bg,color:'1A4A8A',size:9,align:AlignmentType.RIGHT,width:bankWidths[5]}}),
+    ]}}}})}});
+  }});
+
+  // ── SMS table rows from visible cards ───────────────────────────────────
+  const smsHdrs=['SL','B Party (Sender)','Date / Time','Type','Full Message (Body)','Remarks'];
+  const smsWidths=[0.8,2.5,2.5,1.2,8.5,2.5];
+  const smsTableRows=[new TableRow({{children:smsHdrs.map((h,i)=>hdrCell(h,smsWidths[i]))}})];
+
+  cards.forEach((c,idx)=>{{
+    const dirBadge=c.querySelector('.dir-in')||c.querySelector('.dir-out');
+    const mtype=dirBadge?.classList.contains('dir-in')?'IN':
+               (dirBadge?.classList.contains('dir-out')?'OUT':'—');
+    const sender=c.querySelector('.snm')?.textContent?.replace(/[●•]/,'').replace('📱','').trim()||'';
+    const dateEl=c.querySelector('.sdate')?.textContent?.replace('🕐','').trim()||'';
+    const body=c.querySelector('.sbody')?.textContent?.trim()||'';
+    const cats=[...c.querySelectorAll('.ctag')].map(t=>t.textContent.trim()).join(', ');
+    const acctMini=c.querySelector('.acct-mini')?.textContent?.replace(/[\n\r]+/g,' ').trim()||'';
+    const remarks=[cats,acctMini].filter(Boolean).join(' | ');
+
+    const isHigh=c.dataset.tier==='high'; const isMed=c.dataset.tier==='med';
+    const isSmall=c.dataset.tier==='small';
+    const rbg=isHigh?'FEF2F2':isMed?'FFF5F5':isSmall?'FFFBF0':(idx%2===0?'FFFFFF':'F7F7F7');
+    const tbg=mtype==='IN'?'E8F5EE':mtype==='OUT'?'FFF0F0':rbg;
+    const tcol=mtype==='IN'?'1A7A4A':mtype==='OUT'?'CC2200':'666666';
+
+    smsTableRows.push(new TableRow({{children:[
+      cell(String(idx+1),{{fill:rbg,bold:true,color:'555555',size:8,align:AlignmentType.CENTER,width:smsWidths[0]}}),
+      cell(sender,{{fill:rbg,bold:true,color:'1A4A8A',size:8,width:smsWidths[1]}}),
+      cell(dateEl,{{fill:rbg,color:'444444',size:7,width:smsWidths[2]}}),
+      cell(mtype,{{fill:tbg,bold:true,color:tcol,size:9,align:AlignmentType.CENTER,width:smsWidths[3]}}),
+      cell(body,{{fill:rbg,color:'111111',size:8,width:smsWidths[4]}}),
+      cell(remarks,{{fill:rbg,color:'333333',size:8,width:smsWidths[5]}}),
+    ]}}}})}});
+  }});
+
+  // ── Cover info table ────────────────────────────────────────────────────
+  const infoData=[
+    ['Target Number', tn_val||'All Numbers'],
+    ['Total Displayed SMS', String(cards.length)],
+    ['Report Generated', now_str],
+    ['Note', 'Deleted cards excluded from this report'],
+  ];
+  const infoRows=infoData.map(([l,v],i)=>new TableRow({{children:[
+    cell(l,{{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'1A1A2E',width:5}}),
+    cell(v,{{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'C0392B',width:6}}),
+  ]}}));
+
+  // ── Assemble Document ────────────────────────────────────────────────────
+  const doc=new Document({{
+    creator:'SMS Intelligence Dashboard',
+    title:'SMS Intelligence Report',
+    sections:[{{
+      properties:{{
+        page:{{size:{{width:12240,height:15840}},margin:{{top:1080,bottom:1080,left:850,right:850}}}},
+      }},
+      headers:{{default:new docx.Header({{children:[new Paragraph({{
+        border:{{bottom:{{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}}}},
+        spacing:{{after:40}},
+        children:[
+          new TextRun({{text:'SMS INTELLIGENCE REPORT',bold:true,size:18,color:'1A1A2E',font:'Arial'}}),
+          new TextRun({{text:tn_val?`   |   Target: ${{tn_val}}`:'',size:18,color:'555555',font:'Arial'}}),
+          new TextRun({{text:'   |   CONFIDENTIAL',bold:true,size:18,color:'C0392B',font:'Arial'}}),
+        ],
+      }})])}}),
+      footers:{{default:new docx.Footer({{children:[new Paragraph({{
+        border:{{top:{{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}}}},
+        children:[new TextRun({{text:'CDR Forensic Analysis  |  Bangladesh Law Enforcement  |  CONFIDENTIAL',size:16,color:'888888',font:'Arial'}})],
+      }})]}})}},
+      children:[
+        // Title
+        new Paragraph({{alignment:AlignmentType.CENTER,spacing:{{before:400,after:120}},
+          children:[new TextRun({{text:'SMS INTELLIGENCE REPORT',bold:true,size:52,color:'1A1A2E',font:'Arial'}})]}},),
+        new Paragraph({{alignment:AlignmentType.CENTER,spacing:{{after:320}},
+          children:[new TextRun({{text:'Forensic SMS Analysis Dashboard — CDR Intelligence',italics:true,size:24,color:'555555',font:'Arial'}})]}},),
+        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:infoRows}}),
+        new Paragraph({{spacing:{{after:120}}}}),
+        // Section 1: Bank Summary
+        secHeading('1','MFS / Bank Transaction Summary'),
+        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:bankTableRows}}),
+        new Paragraph({{spacing:{{after:120}}}}),
+        // Section 2: SMS Table
+        secHeading('2',`Important SMS Messages — All (${{cards.length}} records)`),
+        new Paragraph({{spacing:{{after:60}},
+          children:[new TextRun({{text:`Deleted cards excluded. Report generated: ${{now_str}}`,italics:true,size:18,color:'888888',font:'Arial'}})]}},),
+        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:smsTableRows}}),
+        new Paragraph({{spacing:{{after:60}}}}),
+      ],
+    }}],
+  }});
+
+  Packer.toBlob(doc).then(blob=>{{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='SMS_Intelligence_Report_'+(tn_val||'report')+'.docx';
+    a.click();
+    btn.textContent='📄 Download Word'; btn.disabled=false;
+  }}).catch(e=>{{ btn.textContent='❌ Error'; btn.disabled=false; console.error(e); }});
+}}
 
 // ── Delete card with Undo ──────────────────────────────────────────────────
 let _delStack=[], _undoTimer=null;
