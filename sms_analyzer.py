@@ -182,6 +182,7 @@ PROMO_NUMBERS = {
     '8801537275871','01537275871',   # Land/property listing (=Katha>Purbachal)
     '8801713002610','01713002610',   # UMCH property/land listing
     '8801847050242','01847050242',   # ব্যক্তিগত নম্বর — ব্লক করা হয়েছে
+    '8801969910636','01969910636',   # Chaldal promo
 }
 
 # OTP sender names — always filter
@@ -2033,87 +2034,71 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 </div>
 <script>
 const allC=document.querySelectorAll('.scard');
-let aT='all',aCat='all',aM='all',aD='all',sQ='';
-// ── Multi-select filter engine ─────────────────────────────────────────────
-let selTiers=new Set(),selCats=new Set(),selMonths=new Set(),selDirs=new Set(),sQ='';
+
+// ── Multi-select filter engine ──────────────────────────────────────────────
+// selTiers, selCats, selMonths: Set of selected values. Empty = "All"
+let selTiers=new Set(), selCats=new Set(), selMonths=new Set(), sQ='';
 
 function apply(){{
   let v=0;
   allC.forEach(c=>{{
     if(c.classList.contains('deleted'))return;
-    const tier=c.dataset.tier||'';
-    const cats=c.dataset.cats||'';
-    const month=c.dataset.month||'';
-    const dir=c.dataset.dir||'';
-    const txt=c.innerText.toLowerCase();
+    const tier  = c.dataset.tier  || '';
+    const cats  = c.dataset.cats  || '';
+    const month = c.dataset.month || '';
+    const txt   = c.innerText.toLowerCase();
 
-    const okTier  = selTiers.size===0   || selTiers.has(tier);
-    const okCat   = selCats.size===0    || [...selCats].some(x=>cats.includes(x));
-    const okMonth = selMonths.size===0  || selMonths.has(month);
-    const okDir   = selDirs.size===0    || selDirs.has(dir);
-    const okSrch  = !sQ                 || txt.includes(sQ.toLowerCase());
+    // Empty set = All (no filter). Otherwise OR logic within same group.
+    const okTier  = selTiers.size===0  || selTiers.has(tier);
+    const okCat   = selCats.size===0   || [...selCats].some(x=>cats.includes(x));
+    const okMonth = selMonths.size===0 || selMonths.has(month);
+    const okSrch  = !sQ || txt.includes(sQ.toLowerCase());
 
-    const ok = okTier && okCat && okMonth && okDir && okSrch;
-    c.style.display=ok?'':'none';
-    if(ok)v++;
+    const ok = okTier && okCat && okMonth && okSrch;
+    c.style.display = ok ? '' : 'none';
+    if(ok) v++;
   }});
-  document.getElementById('vc').textContent=v;
-  _syncBtnStates();
+  document.getElementById('vc').textContent = v;
+  _sync();
 }}
 
-function _syncBtnStates(){{
-  const allEmpty = selTiers.size===0 && selCats.size===0 && selDirs.size===0;
+function _sync(){{
+  // Tier / Category / "All" filter buttons
+  const noFilter = selTiers.size===0 && selCats.size===0;
   document.querySelectorAll('.fbtn').forEach(b=>{{
-    if(b.dataset.all!==undefined && b.dataset.all!==null && 'all' in b.dataset) {{
-      b.classList.toggle('active', allEmpty);
-    }} else if('tier' in b.dataset) {{
-      b.classList.toggle('active', selTiers.has(b.dataset.tier));
-    }} else if('cat' in b.dataset) {{
-      b.classList.toggle('active', selCats.has(b.dataset.cat));
-    }} else if('dir' in b.dataset) {{
-      b.classList.toggle('active', selDirs.has(b.dataset.dir));
-    }}
+    if('all' in b.dataset)       b.classList.toggle('active', noFilter);
+    else if('tier' in b.dataset) b.classList.toggle('active', selTiers.has(b.dataset.tier));
+    else if('cat'  in b.dataset) b.classList.toggle('active', selCats.has(b.dataset.cat));
   }});
+  // Month buttons
+  const noMonth = selMonths.size===0;
   document.querySelectorAll('.mbtn').forEach(b=>{{
-    if('all' in b.dataset) {{
-      b.classList.toggle('active', selMonths.size===0);
-    }} else if('month' in b.dataset) {{
-      b.classList.toggle('active', selMonths.has(b.dataset.month));
-    }}
+    if('all'   in b.dataset) b.classList.toggle('active', noMonth);
+    else if('month' in b.dataset) b.classList.toggle('active', selMonths.has(b.dataset.month));
   }});
 }}
 
-function fAll(b){{
-  selTiers.clear(); selCats.clear(); selDirs.clear();
-  apply();
-}}
+// All: clear all selections → show everything
+function fAll(b){{ selTiers.clear(); selCats.clear(); apply(); }}
 
+// Tier toggle: click once = select, click again = deselect
 function fTier(b,t){{
-  if(selTiers.has(t)) selTiers.delete(t);
-  else selTiers.add(t);
+  if(selTiers.has(t)) selTiers.delete(t); else selTiers.add(t);
   apply();
 }}
 
+// Category toggle
 function fCat(b,c){{
-  if(selCats.has(c)) selCats.delete(c);
-  else selCats.add(c);
+  if(selCats.has(c)) selCats.delete(c); else selCats.add(c);
   apply();
 }}
 
-function fDir(b,d){{
-  if(selDirs.has(d)) selDirs.delete(d);
-  else selDirs.add(d);
-  apply();
-}}
+// Month All: clear month filter
+function fMonthAll(b){{ selMonths.clear(); apply(); }}
 
-function fMonthAll(b){{
-  selMonths.clear();
-  apply();
-}}
-
+// Month toggle
 function fMonth(b,m){{
-  if(selMonths.has(m)) selMonths.delete(m);
-  else selMonths.add(m);
+  if(selMonths.has(m)) selMonths.delete(m); else selMonths.add(m);
   apply();
 }}
 
