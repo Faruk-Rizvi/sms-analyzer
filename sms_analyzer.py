@@ -1795,6 +1795,178 @@ def generate_html(sms_list, stats, out_path, tn=""):
         for m in months)
     tnb=f'<div class="tnbadge">📱 {esc(tn)}</div>' if tn else ""
 
+    _word_js = '''
+// ── Word (docx.js) ──────────────────────────────────────────────────────────
+function downloadWord(){
+  const btn=document.getElementById('word-btn');
+  btn.textContent='⏳ Generating...'; btn.disabled=true;
+  if(!window.docx){
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/docx@8/build/index.js';
+    s.onload=()=>_buildWord(btn);
+    s.onerror=()=>{ btn.textContent='❌ No Internet'; btn.disabled=false; };
+    document.head.appendChild(s);
+  } else { _buildWord(btn); }
+}
+
+function _buildWord(btn){
+  const {Document,Packer,Table,TableRow,TableCell,Paragraph,TextRun,
+         WidthType,BorderStyle,AlignmentType,VerticalAlign,ShadingType}=docx;
+  const cards=[...document.querySelectorAll('.scard')].filter(c=>
+    !c.classList.contains('deleted') && c.style.display!=='none'
+  );
+  const tn_val=document.querySelector('.tnbadge')?document.querySelector('.tnbadge').textContent.replace('📱','').trim():'';
+  const now_str=new Date().toLocaleString('en-BD',{dateStyle:'long',timeStyle:'short'});
+
+  function _rgb(h){const n=parseInt(h,16);return {r:(n>>16)&255,g:(n>>8)&255,b:n&255};}
+  function shd(fill){return {type:ShadingType.CLEAR,fill:'#'+fill};}
+  const brd=(color)=>({
+    top:{style:BorderStyle.SINGLE,size:4,color:color||'CCCCCC'},
+    bottom:{style:BorderStyle.SINGLE,size:4,color:color||'CCCCCC'},
+    left:{style:BorderStyle.SINGLE,size:4,color:color||'CCCCCC'},
+    right:{style:BorderStyle.SINGLE,size:4,color:color||'CCCCCC'},
+  });
+
+  function cell(text,opts){
+    opts=opts||{};
+    const fill=opts.fill||'FFFFFF', bold=opts.bold||false;
+    const color=opts.color||'111111', sz=(opts.size||10)*2;
+    const align=opts.align||AlignmentType.LEFT, width=opts.width||2;
+    return new TableCell({
+      shading:shd(fill),
+      width:{size:Math.round(width*568),type:WidthType.DXA},
+      verticalAlign:VerticalAlign.TOP,
+      borders:brd('CCCCCC'),
+      children:[new Paragraph({
+        alignment:align,
+        children:[new TextRun({text:String(text||''),bold:bold,size:sz,color:color,font:'Arial'})],
+      })],
+    });
+  }
+  function hdrCell(text,width){
+    return cell(text,{fill:'D6E4F0',bold:true,color:'1A1A2E',size:9,align:AlignmentType.CENTER,width:width});
+  }
+  function secHead(num,title){
+    return new Paragraph({
+      spacing:{before:240,after:80},
+      border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'C0392B',space:1}},
+      children:[
+        new TextRun({text:num+'. ',bold:true,size:28,color:'C0392B',font:'Arial'}),
+        new TextRun({text:title,bold:true,size:28,color:'1A1A2E',font:'Arial'}),
+      ],
+    });
+  }
+
+  // Bank summary
+  const bankRows=[];
+  document.querySelectorAll('.acct-card').forEach(ac=>{
+    const svc=(ac.querySelector('.acct-svc')||{}).textContent||'';
+    const nums=[...ac.querySelectorAll('.ag-v')].map(v=>v.textContent.trim());
+    const bal=(ac.querySelector('.ag-bal')||{}).textContent||'';
+    if(svc.trim()) bankRows.push({
+      svc:svc.replace('💳','').trim(),
+      txn:nums[0]||'0',recv:nums[1]||'0',sent:nums[2]||'0',max:nums[3]||'0',
+      bal:bal.replace('Last Balance:','').trim()
+    });
+  });
+  const bHdrs=['Bank / MFS Service','Txn Count','Received (IN)','Sent (OUT)','Max Txn','Last Balance'];
+  const bW=[3.5,1.8,2.8,2.8,2.8,2.8];
+  const bRows=[new TableRow({children:bHdrs.map((h,i)=>hdrCell(h,bW[i]))})];
+  bankRows.forEach((r,i)=>{
+    const bg=i%2===0?'FFFFFF':'F5F5F5';
+    bRows.push(new TableRow({children:[
+      cell(r.svc,{fill:bg,bold:true,color:'1A1A2E',size:9,width:bW[0]}),
+      cell(r.txn,{fill:bg,color:'444444',size:9,align:AlignmentType.CENTER,width:bW[1]}),
+      cell(r.recv,{fill:bg,color:'1A7A4A',size:9,align:AlignmentType.RIGHT,width:bW[2]}),
+      cell(r.sent,{fill:bg,color:'CC2200',size:9,align:AlignmentType.RIGHT,width:bW[3]}),
+      cell(r.max,{fill:bg,color:'7A5A00',size:9,align:AlignmentType.RIGHT,width:bW[4]}),
+      cell(r.bal,{fill:bg,color:'1A4A8A',size:9,align:AlignmentType.RIGHT,width:bW[5]}),
+    ]}));
+  });
+
+  // SMS rows
+  const sHdrs=['SL','Sender','Date / Time','Type','Message Body','Remarks'];
+  const sW=[0.8,2.5,2.5,1.2,8.5,2.5];
+  const sRows=[new TableRow({children:sHdrs.map((h,i)=>hdrCell(h,sW[i]))})];
+  cards.forEach((c,i)=>{
+    const din=c.querySelector('.dir-in'), dout=c.querySelector('.dir-out');
+    const mtype=din?'IN':dout?'OUT':'--';
+    const sender=(c.querySelector('.snm')||{}).textContent||'';
+    const dt=(c.querySelector('.sdate')||{}).textContent||'';
+    const body=(c.querySelector('.sbody')||{}).textContent||'';
+    const cats=[...c.querySelectorAll('.ctag')].map(t=>t.textContent.trim()).join(', ');
+    const acct=((c.querySelector('.acct-mini')||{}).textContent||'').replace(/[\n\r]+/g,' ').trim();
+    const rem=[cats,acct].filter(Boolean).join(' | ');
+    const t=c.dataset.tier;
+    const rbg=t==='high'?'FEF2F2':t==='med'?'FFF5F5':t==='small'?'FFFBF0':(i%2===0?'FFFFFF':'F7F7F7');
+    const tbg=mtype==='IN'?'E8F5EE':mtype==='OUT'?'FFF0F0':rbg;
+    const tcol=mtype==='IN'?'1A7A4A':mtype==='OUT'?'CC2200':'666666';
+    sRows.push(new TableRow({children:[
+      cell(String(i+1),{fill:rbg,bold:true,color:'555555',size:8,align:AlignmentType.CENTER,width:sW[0]}),
+      cell(sender.replace(/[•●]/g,'').replace('📱','').trim(),{fill:rbg,bold:true,color:'1A4A8A',size:8,width:sW[1]}),
+      cell(dt.replace('🕐','').trim().slice(0,16),{fill:rbg,color:'444444',size:7,width:sW[2]}),
+      cell(mtype,{fill:tbg,bold:true,color:tcol,size:9,align:AlignmentType.CENTER,width:sW[3]}),
+      cell(body,{fill:rbg,color:'111111',size:8,width:sW[4]}),
+      cell(rem,{fill:rbg,color:'333333',size:8,width:sW[5]}),
+    ]}));
+  });
+
+  // Info rows
+  const iData=[['Target',tn_val||'All'],['SMS Count',String(cards.length)],['Generated',now_str]];
+  const iRows=iData.map((r,i)=>new TableRow({children:[
+    cell(r[0],{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'1A1A2E',width:5}),
+    cell(r[1],{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'C0392B',width:6}),
+  ]}));
+
+  // Assemble
+  const hdrPara=new Paragraph({
+    border:{bottom:{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}},
+    spacing:{after:40},
+    children:[
+      new TextRun({text:'SMS INTELLIGENCE REPORT',bold:true,size:18,color:'1A1A2E',font:'Arial'}),
+      new TextRun({text:tn_val?'   |   Target: '+tn_val:'',size:18,color:'555555',font:'Arial'}),
+      new TextRun({text:'   |   CONFIDENTIAL',bold:true,size:18,color:'C0392B',font:'Arial'}),
+    ],
+  });
+  const ftrPara=new Paragraph({
+    border:{top:{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}},
+    children:[new TextRun({text:'CDR Forensic Analysis | Bangladesh Law Enforcement | CONFIDENTIAL',size:16,color:'888888',font:'Arial'})],
+  });
+
+  const doc=new Document({
+    creator:'SMS Intelligence',title:'SMS Intelligence Report',
+    sections:[{
+      properties:{page:{size:{width:12240,height:15840},margin:{top:1080,bottom:1080,left:850,right:850}}},
+      headers:{default:new docx.Header({children:[hdrPara]})},
+      footers:{default:new docx.Footer({children:[ftrPara]})},
+      children:[
+        new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:400,after:120},children:[new TextRun({text:'SMS INTELLIGENCE REPORT',bold:true,size:52,color:'1A1A2E',font:'Arial'})]}),
+        new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:320},children:[new TextRun({text:'Forensic SMS Analysis — CDR Intelligence',italics:true,size:24,color:'555555',font:'Arial'})]}),
+        new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:iRows}),
+        new Paragraph({spacing:{after:120}}),
+        secHead('1','MFS / Bank Transaction Summary'),
+        new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:bRows}),
+        new Paragraph({spacing:{after:120}}),
+        secHead('2','Important SMS Messages — All ('+cards.length+' records)'),
+        new Paragraph({spacing:{after:60},children:[new TextRun({text:'Deleted cards excluded. Generated: '+now_str,italics:true,size:18,color:'888888',font:'Arial'})]}),
+        new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:sRows}),
+        new Paragraph({spacing:{after:60}}),
+      ],
+    }],
+  });
+
+  Packer.toBlob(doc).then(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='SMS_Intelligence_Report_'+(tn_val||'report')+'.docx';
+    a.click();
+    btn.textContent='📄 Download Word'; btn.disabled=false;
+  }).catch(e=>{ btn.textContent='❌ Error'; btn.disabled=false; console.error(e); });
+}
+
+
+'''
+
     html=f'''<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2105,193 +2277,7 @@ function fMonth(b,m){{
 function fSearch(v){{sQ=v;apply();}}
 function downloadHTML(){{const blob=new Blob([document.documentElement.outerHTML],{{type:'text/html'}});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SMS_Intelligence_Report_{esc(tn) if tn else "report"}.html';a.click();}}
 
-// ── Word (docx.js) ──────────────────────────────────────────────────────────
-function downloadWord(){{
-  const btn=document.getElementById('word-btn');
-  btn.textContent='⏳ Generating...'; btn.disabled=true;
-  // Load docx.js from CDN
-  if(!window.docx){{
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/docx@8/build/index.js';
-    s.onload=()=>_buildWord(btn);
-    s.onerror=()=>{{ btn.textContent='❌ No Internet'; btn.disabled=false; }};
-    document.head.appendChild(s);
-  }} else {{ _buildWord(btn); }}
-}}
-
-function _buildWord(btn){{
-  const {{Document,Packer,Table,TableRow,TableCell,Paragraph,TextRun,
-          HeadingLevel,WidthType,BorderStyle,AlignmentType,
-          TableLayoutType,VerticalAlign,ShadingType}}=docx;
-
-  // ── Collect visible (non-deleted) cards ────────────────────────────────
-  const cards=[...document.querySelectorAll('.scard')].filter(c=>
-    !c.classList.contains('deleted') && c.style.display!=='none'
-  );
-
-  const tn_val='{esc(tn)}';
-  const now_str=new Date().toLocaleString('en-BD',{{dateStyle:'long',timeStyle:'short'}});
-
-  // ── Helper styles ────────────────────────────────────────────────────────
-  const H=h=>new HeadingLevel[Object.keys(HeadingLevel)[h-1]]||HeadingLevel.HEADING_2;
-  const rgb=(h)=>{{const n=parseInt(h,16);return {{r:(n>>16)&255,g:(n>>8)&255,b:n&255}}}};
-  const shading=(fill)=>{{const c=rgb(fill);return{{type:ShadingType.CLEAR,fill:`#${{fill}}`}}}};
-
-  function cell(text, opts={{}}){{
-    const fill=opts.fill||'FFFFFF'; const bold=opts.bold||false;
-    const color=opts.color||'111111'; const sz=(opts.size||10)*2;
-    const align=opts.align||AlignmentType.LEFT; const width=opts.width||2;
-    return new TableCell({{
-      shading:shading(fill),
-      width:{{size:Math.round(width*568),type:WidthType.DXA}},
-      verticalAlign:VerticalAlign.TOP,
-      borders:{{top:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
-                bottom:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
-                left:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}},
-                right:{{style:BorderStyle.SINGLE,size:4,color:'CCCCCC'}}}},
-      children:[new Paragraph({{
-        alignment:align,
-        children:[new TextRun({{text:String(text||''),bold,size:sz,color,font:'Arial'}})],
-      }})],
-    }});
-  }}
-
-  function hdrCell(text, width){{
-    return cell(text,{{fill:'D6E4F0',bold:true,color:'1A1A2E',size:9,
-                       align:AlignmentType.CENTER,width}});
-  }}
-
-  function secHeading(num, title){{
-    return new Paragraph({{
-      spacing:{{before:240,after:80}},
-      border:{{bottom:{{style:BorderStyle.SINGLE,size:4,color:'C0392B',space:1}}}},
-      children:[
-        new TextRun({{text:`${{num}}. `,bold:true,size:28,color:'C0392B',font:'Arial'}}),
-        new TextRun({{text:title,bold:true,size:28,color:'1A1A2E',font:'Arial'}}),
-      ],
-    }});
-  }}
-
-  // ── Build bank summary from sidebar cards ───────────────────────────────
-  const bankRows=[];
-  document.querySelectorAll('.acct-card').forEach(ac=>{{
-    const svc=ac.querySelector('.acct-svc')?.textContent?.replace('💳','').trim()||'';
-    const nums=[...ac.querySelectorAll('.ag-v')].map(v=>v.textContent.trim());
-    const bal=ac.querySelector('.ag-bal')?.textContent?.replace('💰','').trim()||'';
-    if(svc) bankRows.push({{svc,txn:nums[0]||'0',recv:nums[1]||'0',sent:nums[2]||'0',max:nums[3]||'0',bal:bal.replace('Last Balance:','').trim()}});
-  }});
-
-  const bankHdrs=['Bank / MFS Service','Txn Count','Total Received (IN)','Total Sent (OUT)','Max Transaction','Last Balance'];
-  const bankWidths=[3.5,1.8,2.8,2.8,2.8,2.8];
-  const bankTableRows=[new TableRow({{children:bankHdrs.map((h,i)=>hdrCell(h,bankWidths[i]))}})];
-  bankRows.forEach((r,idx)=>{{
-    const bg=idx%2===0?'FFFFFF':'F5F5F5';
-    bankTableRows.push(new TableRow({{children:[
-      cell(r.svc,{{fill:bg,bold:true,color:'1A1A2E',size:9,width:bankWidths[0]}}),
-      cell(r.txn,{{fill:bg,color:'444444',size:9,align:AlignmentType.CENTER,width:bankWidths[1]}}),
-      cell(r.recv,{{fill:bg,color:'1A7A4A',size:9,align:AlignmentType.RIGHT,width:bankWidths[2]}}),
-      cell(r.sent,{{fill:bg,color:'CC2200',size:9,align:AlignmentType.RIGHT,width:bankWidths[3]}}),
-      cell(r.max,{{fill:bg,color:'7A5A00',size:9,align:AlignmentType.RIGHT,width:bankWidths[4]}}),
-      cell(r.bal,{{fill:bg,color:'1A4A8A',size:9,align:AlignmentType.RIGHT,width:bankWidths[5]}}),
-    ]}}}})}});
-  }});
-
-  // ── SMS table rows from visible cards ───────────────────────────────────
-  const smsHdrs=['SL','B Party (Sender)','Date / Time','Type','Full Message (Body)','Remarks'];
-  const smsWidths=[0.8,2.5,2.5,1.2,8.5,2.5];
-  const smsTableRows=[new TableRow({{children:smsHdrs.map((h,i)=>hdrCell(h,smsWidths[i]))}})];
-
-  cards.forEach((c,idx)=>{{
-    const dirBadge=c.querySelector('.dir-in')||c.querySelector('.dir-out');
-    const mtype=dirBadge?.classList.contains('dir-in')?'IN':
-               (dirBadge?.classList.contains('dir-out')?'OUT':'—');
-    const sender=c.querySelector('.snm')?.textContent?.replace(/[●•]/,'').replace('📱','').trim()||'';
-    const dateEl=c.querySelector('.sdate')?.textContent?.replace('🕐','').trim()||'';
-    const body=c.querySelector('.sbody')?.textContent?.trim()||'';
-    const cats=[...c.querySelectorAll('.ctag')].map(t=>t.textContent.trim()).join(', ');
-    const acctMini=c.querySelector('.acct-mini')?.textContent?.replace(/[\n\r]+/g,' ').trim()||'';
-    const remarks=[cats,acctMini].filter(Boolean).join(' | ');
-
-    const isHigh=c.dataset.tier==='high'; const isMed=c.dataset.tier==='med';
-    const isSmall=c.dataset.tier==='small';
-    const rbg=isHigh?'FEF2F2':isMed?'FFF5F5':isSmall?'FFFBF0':(idx%2===0?'FFFFFF':'F7F7F7');
-    const tbg=mtype==='IN'?'E8F5EE':mtype==='OUT'?'FFF0F0':rbg;
-    const tcol=mtype==='IN'?'1A7A4A':mtype==='OUT'?'CC2200':'666666';
-
-    smsTableRows.push(new TableRow({{children:[
-      cell(String(idx+1),{{fill:rbg,bold:true,color:'555555',size:8,align:AlignmentType.CENTER,width:smsWidths[0]}}),
-      cell(sender,{{fill:rbg,bold:true,color:'1A4A8A',size:8,width:smsWidths[1]}}),
-      cell(dateEl,{{fill:rbg,color:'444444',size:7,width:smsWidths[2]}}),
-      cell(mtype,{{fill:tbg,bold:true,color:tcol,size:9,align:AlignmentType.CENTER,width:smsWidths[3]}}),
-      cell(body,{{fill:rbg,color:'111111',size:8,width:smsWidths[4]}}),
-      cell(remarks,{{fill:rbg,color:'333333',size:8,width:smsWidths[5]}}),
-    ]}}}})}});
-  }});
-
-  // ── Cover info table ────────────────────────────────────────────────────
-  const infoData=[
-    ['Target Number', tn_val||'All Numbers'],
-    ['Total Displayed SMS', String(cards.length)],
-    ['Report Generated', now_str],
-    ['Note', 'Deleted cards excluded from this report'],
-  ];
-  const infoRows=infoData.map(([l,v],i)=>new TableRow({{children:[
-    cell(l,{{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'1A1A2E',width:5}}),
-    cell(v,{{fill:i%2===0?'EEF2FF':'FFFFFF',bold:true,size:10,color:'C0392B',width:6}}),
-  ]}}));
-
-  // ── Assemble Document ────────────────────────────────────────────────────
-  const doc=new Document({{
-    creator:'SMS Intelligence Dashboard',
-    title:'SMS Intelligence Report',
-    sections:[{{
-      properties:{{
-        page:{{size:{{width:12240,height:15840}},margin:{{top:1080,bottom:1080,left:850,right:850}}}},
-      }},
-      headers:{{default:new docx.Header({{children:[new Paragraph({{
-        border:{{bottom:{{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}}}},
-        spacing:{{after:40}},
-        children:[
-          new TextRun({{text:'SMS INTELLIGENCE REPORT',bold:true,size:18,color:'1A1A2E',font:'Arial'}}),
-          new TextRun({{text:tn_val?`   |   Target: ${{tn_val}}`:'',size:18,color:'555555',font:'Arial'}}),
-          new TextRun({{text:'   |   CONFIDENTIAL',bold:true,size:18,color:'C0392B',font:'Arial'}}),
-        ],
-      }})])}}),
-      footers:{{default:new docx.Footer({{children:[new Paragraph({{
-        border:{{top:{{style:BorderStyle.SINGLE,size:6,color:'C0392B',space:1}}}},
-        children:[new TextRun({{text:'CDR Forensic Analysis  |  Bangladesh Law Enforcement  |  CONFIDENTIAL',size:16,color:'888888',font:'Arial'}})],
-      }})]}})}},
-      children:[
-        // Title
-        new Paragraph({{alignment:AlignmentType.CENTER,spacing:{{before:400,after:120}},
-          children:[new TextRun({{text:'SMS INTELLIGENCE REPORT',bold:true,size:52,color:'1A1A2E',font:'Arial'}})]}},),
-        new Paragraph({{alignment:AlignmentType.CENTER,spacing:{{after:320}},
-          children:[new TextRun({{text:'Forensic SMS Analysis Dashboard — CDR Intelligence',italics:true,size:24,color:'555555',font:'Arial'}})]}},),
-        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:infoRows}}),
-        new Paragraph({{spacing:{{after:120}}}}),
-        // Section 1: Bank Summary
-        secHeading('1','MFS / Bank Transaction Summary'),
-        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:bankTableRows}}),
-        new Paragraph({{spacing:{{after:120}}}}),
-        // Section 2: SMS Table
-        secHeading('2',`Important SMS Messages — All (${{cards.length}} records)`),
-        new Paragraph({{spacing:{{after:60}},
-          children:[new TextRun({{text:`Deleted cards excluded. Report generated: ${{now_str}}`,italics:true,size:18,color:'888888',font:'Arial'}})]}},),
-        new Table({{width:{{size:100,type:WidthType.PERCENTAGE}},rows:smsTableRows}}),
-        new Paragraph({{spacing:{{after:60}}}}),
-      ],
-    }}],
-  }});
-
-  Packer.toBlob(doc).then(blob=>{{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='SMS_Intelligence_Report_'+(tn_val||'report')+'.docx';
-    a.click();
-    btn.textContent='📄 Download Word'; btn.disabled=false;
-  }}).catch(e=>{{ btn.textContent='❌ Error'; btn.disabled=false; console.error(e); }});
-}}
-
+{_word_js}
 // ── Delete card with Undo ──────────────────────────────────────────────────
 let _delStack=[], _undoTimer=null;
 const _undoBar=document.getElementById('undo-bar');
