@@ -390,6 +390,8 @@ SKIP_BODY_RE = re.compile(
     r"|seek.*support.*(?:and|&)\s*vote|seeking.*support.*(?:and|&)\s*vote"
     r"|\(?dba\s*news\)?[:\s]|dba\s*news\b"
     r"|আঞ্জুমান|যাকাত\s*ও\s*সাদাকা|যাকাত.*সাদাকা|সাদাকা.*যাকাত"
+    r"|wish(?:es)?\s*you\s*(?:and\s*(?:your\s*)?family)?(?:[\s,.-]+(?:a\s+)?(?:happy|prosperous|healthy|blessed|joyful)|\s*(?:good\s*luck|good\s*health|happiness|peace|prosperity))"
+    r"|wish\s*you\s*and\s*(?:your\s*)?family|wishing\s*you\s*(?:and\s*(?:your\s*)?family)?"
 
     # AGM / shareholder notices
     r"|(?:\d+(?:st|nd|rd|th)\s+agm|annual\s+general\s+meeting).*(?:plc|ltd|limited|company)"
@@ -529,7 +531,30 @@ SKIP_BODY_RE = re.compile(
     # Ramadan interior / home decor seasonal promo
     r"|(?:ramadan|eid).*(?:special|package|offer).*(?:interior|design|home\s*decor)"
     # Jewelry (ইস্কাটনে ফ্ল্যাট ও land share)
-    r"|ইস্কাটনে.*(?:ফ্ল্যাট|land|flat).*(?:চলছে|sale|01\d{9})",
+    r"|ইস্কাটনে.*(?:ফ্ল্যাট|land|flat).*(?:চলছে|sale|01\d{9})"
+
+    # ── নতুন (এই CDR থেকে) ──────────────────────────────────────────────────
+    # নেসকো / BREB বিদ্যুৎ বন্ধ নোটিশ
+    r"|নেসকো|breb.*(?:বিদ্যুৎ|electric)|বিদ্যুৎ.*(?:বন্ধ|সরবরাহ\s*বন্ধ)"
+    r"|(?:হরিশপুর|গ্রিড|উপকেন্দ্র).*(?:রক্ষণাবেক্ষণ|বিদ্যুৎ|বন্ধ)"
+    r"|দপ্তরের\s*আওতাধীন\s*সকল\s*এলাকায়\s*বিদ্যুৎ"
+
+    # Focus promo (restaurant / UAC / Farmgate)
+    r"|focus\s*(?:farmgate|uac|restaurant|01\d{9})"
+    r"|ll\.\s*focus\s*farmgate"
+
+    # সচিবালয় প্রবেশ OTP
+    r"|(?:বাংলাদেশ\s*সচিবালয়).*(?:ওটিপি|otp|প্রবেশ)"
+    r"|সচিবালয়.*প্রবেশের\s*জন্য.*(?:ওটিপি|otp|\d{4,6})"
+
+    # Pure greeting only — body শুধু greeting (আর কিছু নেই)
+    # আসসালামু আলাইকুম স্যার (only) — no substantive content after
+    # r"|^[^।!]+আস+সালাম\w*\s+\w{0,8}[।\s]*$"  ← too risky, use is_greeting_only() below
+
+    # Happy New Year from brands/orgs (আগে থেকেই আংশিক আছে, শক্তিশালী করছি)
+    r"|happy\s+new\s+year\s+202[0-9]|happy\s+new\s+year.*(?:family|contact|call|visit)"
+    r"|শুভ\s+নববর্ষ\s+202[0-9]|নববর্ষের\s+(?:শুভেচ্ছা|আন্তরিক|উষ্ণ)"
+    ,
     re.I | re.S)
 
 # সব regex pattern-এ বাংলা string NFC normalize করি
@@ -588,6 +613,18 @@ def is_filtered(sender, body):
     # Body keywords — সব sender-এর জন্য check করো
     if SKIP_BODY_RE.search(body): return True
     if MISSED_RE.search(body): return True
+    # Pure greeting only — no substantive content beyond salutation
+    # "আসসালামু আলাইকুম স্যার" alone / "ভাই আসসালামু আলাইকুম।" alone → বাদ
+    _b = body.strip().rstrip('।.!?-')
+    if re.match(
+        r'^(?:ভাই\s+|ছোট\s+ভাই\s+|বড়\s+ভাই\s+)?'
+        r'আস+সালাম(?:ু\s*[আ]লাইকুম|ুয়ালাইকুম|\s*ওয়ালাইকুম)'
+        r'(?:\s+ওয়া\s+রহমতুল্লাহ)?'
+        r'(?:\s+(?:স্যার|ভাই|ছোট\s*ভাই|বড়\s*ভাই|ওয়ালাইকুম))?$',
+        _b, re.I
+    ): return True
+    # Happy New Year from org/hospital with contact info or family wishes
+    if re.search(r'happy\s+(?:new\s+year|birthday).*(?:family|contact|call|visit|ph:|01\d{9})', body, re.I): return True
     # Short-code filter — bank shortcodes ছাড়া
     if SC_RE.match(s) and s not in BANK_SHORTCODES: return True
     # Operator sender keywords
@@ -1646,7 +1683,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
             if pts: acct_mini=f'<div class="acct-mini">{" &nbsp;·&nbsp; ".join(pts)}</div>'
         merged_tag=(f'<span class="merged-tag">🔗 {s["parts"]} parts</span>' if s.get("parts",1)>1 else "")
         cards+=f'''
-        <div class="scard" data-tier="{t}" data-month="{s["month"]}" data-cats="{" ".join(s["categories"])}" data-dir="{direction}">
+        <div class="scard" id="card-{i}" data-tier="{t}" data-month="{s["month"]}" data-cats="{" ".join(s["categories"])}" data-dir="{direction}">
           <div class="sc-head">
             <div class="sc-left">
               <span class="snum">#{i}</span>
@@ -1655,7 +1692,9 @@ def generate_html(sms_list, stats, out_path, tn=""):
                 <div class="sdate">🕐 {esc(s["date"])} {merged_tag}</div>
               </div>
             </div>
-            <div class="sc-right">{tier_badge}{amt_tag}</div>
+            <div class="sc-right">{tier_badge}{amt_tag}
+              <button class="del-btn no-print" onclick="delCard('card-{i}')" title="Delete this card">🗑</button>
+            </div>
           </div>
           {acct_mini}
           <div class="sbody" style="background:{bg}">{hl_body(s["body"],s["amount"],_s_type,_ccy)}</div>
@@ -1880,11 +1919,27 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .sc-foot{{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}}
 .ctag{{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:500}}
 .no-result{{text-align:center;padding:60px;color:#9ca3af}}
+.del-btn{{background:none;border:1px solid #fca5a5;color:#dc2626;font-size:14px;
+  padding:3px 8px;border-radius:6px;cursor:pointer;margin-left:6px;
+  transition:all .2s;line-height:1;flex-shrink:0}}
+.del-btn:hover{{background:#fef2f2;border-color:#dc2626;transform:scale(1.1)}}
+.scard.deleted{{display:none!important}}
+.undo-bar{{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:#1a1a2e;color:#fff;padding:10px 20px;border-radius:24px;
+  font-size:13px;font-weight:600;display:flex;align-items:center;gap:12px;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:9999;
+  opacity:0;transition:opacity .3s;pointer-events:none}}
+.undo-bar.show{{opacity:1;pointer-events:all}}
+.undo-btn{{background:#c0392b;color:#fff;border:none;border-radius:12px;
+  padding:4px 14px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit}}
+.del-count{{background:rgba(255,255,255,.15);padding:2px 8px;border-radius:10px;font-size:12px}}
 .footer{{background:#1a1a2e;padding:16px 28px;
   display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.35)}}
 @media print{{.topbar{{position:static}}.summary-sheet{{position:static}}
   .sidebar{{position:static;height:auto}}.layout{{grid-template-columns:1fr}}
-  .fbar{{display:none}}.scard{{break-inside:avoid}}}}
+  .fbar{{display:none}}.scard{{break-inside:avoid}}
+  .del-btn,.undo-bar,.no-print{{display:none!important}}
+  .scard.deleted{{display:none!important}}}}
 </style></head><body>
 
 <div class="topbar">
@@ -1959,6 +2014,14 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
   </div>
 </div>
 </div>
+
+<!-- Undo bar -->
+<div id="undo-bar" class="undo-bar no-print">
+  <span>🗑 <span id="del-cnt" class="del-count">0</span> card(s) deleted</span>
+  <button class="undo-btn" onclick="undoLast()">↩ Undo</button>
+  <button class="undo-btn" style="background:#475569" onclick="clearAll()">✕</button>
+</div>
+
 <div class="footer">
   <span>🔒 Confidential — For Law Enforcement Use Only</span>
   <span>{"Target: " + esc(tn) + " | " if tn else ""}Generated: {now} | SMS Intelligence Dashboard</span>
@@ -1966,7 +2029,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 <script>
 const allC=document.querySelectorAll('.scard');
 let aT='all',aCat='all',aM='all',aD='all',sQ='';
-function apply(){{let v=0;allC.forEach(c=>{{const ok=(aT==='all'||c.dataset.tier===aT)&&(aCat==='all'||(c.dataset.cats||'').includes(aCat))&&(aM==='all'||c.dataset.month===aM)&&(aD==='all'||c.dataset.dir===aD)&&(!sQ||c.innerText.toLowerCase().includes(sQ.toLowerCase()));c.style.display=ok?'':'none';if(ok)v++;}});document.getElementById('vc').textContent=v;}}
+function apply(){{let v=0;allC.forEach(c=>{{if(c.classList.contains('deleted'))return;const ok=(aT==='all'||c.dataset.tier===aT)&&(aCat==='all'||(c.dataset.cats||'').includes(aCat))&&(aM==='all'||c.dataset.month===aM)&&(aD==='all'||c.dataset.dir===aD)&&(!sQ||c.innerText.toLowerCase().includes(sQ.toLowerCase()));c.style.display=ok?'':'none';if(ok)v++;}});document.getElementById('vc').textContent=v;}}
 function act(b,sel){{document.querySelectorAll(sel).forEach(x=>x.classList.remove('active'));b.classList.add('active');}}
 function fAll(b){{aT='all';aCat='all';aD='all';act(b,'.fbtn');apply();}}
 function fTier(b,t){{aT=t;aCat='all';aD='all';act(b,'.fbtn');apply();}}
@@ -1976,6 +2039,30 @@ function fMonthAll(b){{aM='all';act(b,'.mbtn');apply();}}
 function fMonth(b,m){{aM=m;act(b,'.mbtn');apply();}}
 function fSearch(v){{sQ=v;apply();}}
 function downloadHTML(){{const blob=new Blob([document.documentElement.outerHTML],{{type:'text/html'}});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SMS_Intelligence_Report_{esc(tn) if tn else "report"}.html';a.click();}}
+
+// ── Delete card with Undo ──────────────────────────────────────────────────
+let _delStack=[], _undoTimer=null;
+const _undoBar=document.getElementById('undo-bar');
+
+function delCard(id){{
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.classList.add('deleted');
+  _delStack.push(id);
+  document.getElementById('del-cnt').textContent=_delStack.length;
+  _undoBar.classList.add('show');
+  clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(()=>_undoBar.classList.remove('show'),4000);
+  apply();
+}}
+function undoLast(){{
+  const id=_delStack.pop();
+  if(id){{ document.getElementById(id)?.classList.remove('deleted'); }}
+  document.getElementById('del-cnt').textContent=_delStack.length;
+  if(!_delStack.length) _undoBar.classList.remove('show');
+  apply();
+}}
+function clearAll(){{ _delStack=[]; _undoBar.classList.remove('show'); }}
 </script>
 </body></html>'''
     with open(out_path,'w',encoding='utf-8') as f: f.write(html)
@@ -2007,18 +2094,20 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
 
         _st = stype(item["sender"], body_key)
         if _st in ("foreign_bank", "service", "other"):
-            # foreign_bank/service/other: body-only dedup
             if body_key in seen_body_only: filtered_cnt+=1; continue
             seen_body_only.add(body_key)
         else:
-            # personal/bank/mfs: sender+body+minute dedup
-            dk = (item["sender"], body_key, dt_min)
+            dt_hour   = _dt.strftime('%Y%m%d%H') if _dt != datetime.min else str(item["date"])[:11]
+            if _st == "personal":
+                # personal: sender+body+hour — ১ ঘন্টার মধ্যে same sender same body = ১টাই
+                dk = (item["sender"], body_key, dt_hour)
+            else:
+                # bank/mfs: sender+body+minute (repeated txn each minute is valid)
+                dk = (item["sender"], body_key, dt_min)
             if dk in seen_keyed: filtered_cnt+=1; continue
             seen_keyed.add(dk)
-            # personal SMS global body dedup:
-            # একই exact body ভিন্ন সময়ে (club retry, mass SMS) → একবারই দেখাও
-            # ব্যতিক্রম: bank/mfs (same body = repeated txn confirmation, legitimately different)
-            if _st == "personal" and len(body_key) > 30:
+            # personal SMS global body dedup — club/org mass retry
+            if _st == "personal" and len(body_key) > 20:
                 if body_key in seen_full_body: filtered_cnt+=1; continue
                 seen_full_body.add(body_key)
         res = analyze_one(item["sender"], item["body"], item["date"], item.get("direction",""))
