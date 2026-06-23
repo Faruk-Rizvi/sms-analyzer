@@ -280,6 +280,10 @@ SKIP_BODY_RE = re.compile(
     # মিসড কল / কল নোটিফিকেশন
     r"|কলটি গ্রহণ করতে পারবেন|কল মিস|এখন কলটি গ্রহণ"
     r"|missed call|miss call|কলটি মিস|মিস করেছেন"
+    r"|মিসড\s*কল|missed\s*call\s*alert|মিসড\s*কল\s*এলার্ট"
+    r"|টি মিসড কল আছে|টি\s*মিসড\s*কল|মিসড কল আছে"
+    r"|থেকে আপনার \d+\s*টি|আপনার \d+\s*টি মিস"
+    r"|দয়া করে কল করুন"
 
     # অপারেটর নাম
     r"|Grameenphone|Grameen\s*phone|Robi(?:\s+Axiata)?|Airtel"
@@ -327,6 +331,40 @@ SKIP_BODY_RE = re.compile(
     r"|du/buet/medical.*tutor|tutor.*du/buet|coaching\s*(?:centre|center|class)"
     r"|কোচিং\s*(?:সেন্টার|ক্লাস|করুন)|হোম\s*টিউটর\s*(?:পাওয়া|দেওয়া|প্রয়োজন|চাই)"
     r"|free\s*(?:trial|class).*tutor|two\s*trial.*free\s*class"
+
+    # ডাক্তার সেবা প্রমো / হেলথ প্যাকেজ
+    r"|ডাক্তার\s*সেবা\s*মাত্র|সম্পূর্ণ\s*ডাক্তার\s*সেবা"
+    r"|মাসের\s*সম্পূর্ণ.*সেবা.*টাকায়"
+    r"|doctor\s*service.*tk|health\s*package.*taka"
+
+    # মিসড কল এলার্ট সহ প্রমো (Mobil oil, কুপন, শর্ট লিঙ্ক)
+    r"|মিসড\s*কল\s*এলার্ট.*(?:কিনলে|ছাড়|কুপন|tiger|t\.ly|nk/|link)"
+    r"|missed\s*call\s*alert.*(?:discount|coupon|buy|link|oil)"
+
+    # SMS subscription service promo (Life Style, RT, STS type)
+    r"|start\s+(?:rt|sts|sms|st)\s+লিখে.*(?:\d{4,5}|নম্বরে|পাঠিয়ে)"
+    r"|লিখে\s+sms\s+কর|লিখে\s+পাঠিয়ে\s*দিন\s*\d{4,5}"
+    r"|চার্জ\s*প্রতিদিন\s*মাত্র|অটো\s*রিনিউ\s*প্রযোজ্য"
+    r"|স্ট্যাটাস\s*পেতে\s*start|ক্যাপশন.*start.*sms"
+
+    # Mobil / lubricant oil promo + buymobil domain
+    r"|mobil\s+for\s+hybrid|mobil\s+(?:oil|engine|hybrid|lube)"
+    r"|hybrid\s+engine.*পারফরম্যান্|হাইব্রিড\s+গাড়ির.*পারফরম্যান্"
+    r"|buymobil\.mjlbl\.com|mjlbl\.com/campaign"
+
+    # প্লট বুকিং / আবাসন প্রমো (specific)
+    r"|প্রবাসী\s*পল্লীতে\s*প্লট|প্রবাসী\s*পল্লী.*বুকিং"
+    r"|পূর্বাচল.*প্লট.*বুকিং|জাইকার\s*বিপরীতে"
+    r"|প্লট\s*বুকিং\s*চলছে"
+
+    # Tower/lottery scam + mobile বিজ্ঞাপন
+    r"|tower\s+বানিয়ে\s+পেয়ে|tower.*স্মার্টফ|টাওয়ার.*স্মার্টফ"
+    r"|কাউন্টডাউন.*tower|উৎসবের.*tower"
+
+    # স্বাস্থ্য সেবা প্রমো + missed call combo
+    r"|আপনার\s+স্বাস্থ্য.*আমাদের\s+দায়িত্ব"
+    r"|স্বাস্থ্য.*দায়িত্ব.*যোগাযোগ"
+    r"|এখন\s+আমার\s+সাথে\s+যোগাযোগ\s+করতে\s+পারবেন"
 
     # SMSC delivery receipt — NIP/MOne CDR format, body নেই
     r"|id:\d+\s+submit\s+date:\d+\s+done\s+date:\d+\s+stat:(?:DELIVRD|UNDELIV|EXPIRED|DELETED)"
@@ -569,7 +607,10 @@ def _nfc_re(pattern_str, flags=0):
 SKIP_BODY_RE    = _nfc_re(SKIP_BODY_RE.pattern, SKIP_BODY_RE.flags)
 
 MISSED_RE = _nfc_re(
-    r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন',
+    r'মিস করেছেন|কল মিস|missed call|miss call|কলটি মিস|কলটি গ্রহণ করতে পারবেন'
+    r'|মিসড\s*কল|missed\s*call\s*alert|মিসড\s*কল\s*এলার্ট'
+    r'|টি মিসড কল আছে|টি\s*মিসড\s*কল|মিসড কল আছে'
+    r'|দয়া করে কল করুন',
     re.I)
 
 # OTP / verification — সব filter হবে
@@ -1385,7 +1426,38 @@ def load_xlsx(path):
             sender = _ud.normalize('NFC', sender)
             out.append({"sender": sender, "body": body, "date": date,
                         "aparty": aparty, "direction": direction})
-    return out
+
+    # ── Multipart SMS concatenation ───────────────────────────────────────────
+    # UCS-2 (বাংলা) SMS per part: max 67 chars। Same sender+date → consecutive parts
+    MULTIPART_LEN = 67
+    merged = []
+    i = 0
+    while i < len(out):
+        cur = out[i]
+        body_len = len(cur["body"])
+        # এই row multipart-এর শুরু হতে পারে যদি body ঠিক MULTIPART_LEN char হয়
+        if body_len == MULTIPART_LEN:
+            combined = cur["body"]
+            j = i + 1
+            while j < len(out):
+                nxt = out[j]
+                # Same sender, same direction, same date (minute-level)
+                same_sender = nxt["sender"] == cur["sender"]
+                same_dir    = nxt["direction"] == cur["direction"]
+                same_min    = str(nxt["date"])[:16] == str(cur["date"])[:16]
+                if same_sender and same_dir and same_min:
+                    combined += nxt["body"]
+                    j += 1
+                    if len(nxt["body"]) < MULTIPART_LEN:
+                        break  # last part (shorter than max)
+                else:
+                    break
+            merged.append({**cur, "body": combined})
+            i = j
+        else:
+            merged.append(cur)
+            i += 1
+    return merged
 
 def load_csv_f(path):
     """CSV parser — standard SMS export ও MOne SMSC format সাপোর্ট করে।
