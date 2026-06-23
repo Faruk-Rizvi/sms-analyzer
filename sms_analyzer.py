@@ -1895,7 +1895,7 @@ function _buildWord(btn){
     const dt=(c.querySelector('.sdate')||{}).textContent||'';
     const body=(c.querySelector('.sbody')||{}).textContent||'';
     const cats=[...c.querySelectorAll('.ctag')].map(t=>t.textContent.trim()).join(', ');
-    const acct=((c.querySelector('.acct-mini')||{}).textContent||'').replace(/[\n\r]+/g,' ').trim();
+    const acct=((c.querySelector('.acct-mini')||{}).textContent||'').trim();
     const rem=[cats,acct].filter(Boolean).join(' | ');
     const t=c.dataset.tier;
     const rbg=t==='high'?'FEF2F2':t==='med'?'FFF5F5':t==='small'?'FFFBF0':(i%2===0?'FFFFFF':'F7F7F7');
@@ -1903,7 +1903,7 @@ function _buildWord(btn){
     const tcol=mtype==='IN'?'1A7A4A':mtype==='OUT'?'CC2200':'666666';
     sRows.push(new TableRow({children:[
       cell(String(i+1),{fill:rbg,bold:true,color:'555555',size:8,align:AlignmentType.CENTER,width:sW[0]}),
-      cell(sender.replace(/[•●]/g,'').replace('📱','').trim(),{fill:rbg,bold:true,color:'1A4A8A',size:8,width:sW[1]}),
+      cell((sender||'').replace('📱','').replace('●','').replace('•','').trim(),{fill:rbg,bold:true,color:'1A4A8A',size:8,width:sW[1]}),
       cell(dt.replace('🕐','').trim().slice(0,16),{fill:rbg,color:'444444',size:7,width:sW[2]}),
       cell(mtype,{fill:tbg,bold:true,color:tcol,size:9,align:AlignmentType.CENTER,width:sW[3]}),
       cell(body,{fill:rbg,color:'111111',size:8,width:sW[4]}),
@@ -2220,13 +2220,15 @@ function apply(){{
     const month = c.dataset.month || '';
     const txt   = c.innerText.toLowerCase();
 
-    // Empty set = All (no filter). Otherwise OR logic within same group.
-    const okTier  = selTiers.size===0  || selTiers.has(tier);
-    const okCat   = selCats.size===0   || [...selCats].some(x=>cats.includes(x));
+    // Filter logic: tier OR cat = union (not intersection)
+    const hasFilter = selTiers.size>0 || selCats.size>0;
+    const tierMatch = selTiers.size>0 && selTiers.has(tier);
+    const catMatch  = selCats.size>0  && [...selCats].some(x=>cats.includes(x));
+    const okMain    = !hasFilter || tierMatch || catMatch;
     const okMonth = selMonths.size===0 || selMonths.has(month);
     const okSrch  = !sQ || txt.includes(sQ.toLowerCase());
 
-    const ok = okTier && okCat && okMonth && okSrch;
+    const ok = okMain && okMonth && okSrch;
     c.style.display = ok ? '' : 'none';
     if(ok) v++;
   }});
