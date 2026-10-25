@@ -913,6 +913,7 @@ def merge(sms_list):
 
 # ── লেনদেন পরিমাণ ──────────────────────────────────────────
 TXN_P = [
+    r'received\s+cashback\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',   # "You have received Cashback Tk 8.70"
     # Cash Out ভ্যারিয়েন্ট — "cashed out", হাইফেন "Cash-Out", বাংলা "ক্যাশ আউট"
     r'cashed\s+out\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'[Cc]ash[\s\-]*[Oo]ut\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
@@ -1570,6 +1571,7 @@ def get_acct(sender, body, amt):
     elif re.search(r'\bcash[\s\-]*out\b|\bcashed\s+out\b|\bpurchase\b|\bpos\s+purchase\b'
                    r'|\bpayment\s+(?:of\s+)?tk.*to\b|\bpayment\s+of\b|\bpaid\b'
                    r'|\bpayment\s+to\b'                       # Nagad: "Payment to 'X' is Successful. Amount: Tk"
+                   r'|\bloan\s+repayment\b|\brepayment\s+of\s+tk'   # "Digital Loan Repayment of Tk … is successful"
                    r'|\bsend\s+money\b|\bsent\b'
                    r'|\bpay\s*bill\b|\brequest\s+of\s+tk.*processed'
                    r'|ক্যাশ\s*আউট|পাঠিয়েছেন|উত্তোলন\s*করেছেন', bl2):
@@ -2293,6 +2295,7 @@ IM_CSS = """
 .im-wrap{margin:18px 0}
 .im-bottom{max-width:1400px;margin:28px auto 40px;padding:0 20px;border-top:3px solid #e2e8f0;padding-top:18px}
 .im-bottom-title{font-size:17px;font-weight:800;color:#0f172a;margin-bottom:6px}
+.rep-note{font-size:11px;color:#475569;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;padding:4px 8px;margin:6px 0 2px}
 .im-bottom-hint{font-size:11.5px;color:#475569;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:8px;padding:6px 10px;margin:4px 0 6px}
 .deleted{display:none!important}
 .dz-target{position:relative}
@@ -2375,6 +2378,48 @@ IM_CSS = """
 """
 
 
+def _collapse_repeats(lst):
+    """একই মেসেজ বারবার এলে একটি কার্ড রাখি (সর্বশেষটি), বাকিগুলোর তারিখ কার্ডে উল্লেখ করি।
+    • প্রতিষ্ঠানের নোটিফিকেশন: একই ছাঁচ (শুধু সংখ্যা আলাদা) → একসাথে
+    • ব্যক্তিগত মেসেজ: শুধু হুবহু একই লেখা → একসাথে
+    • লেনদেন (অঙ্ক > ০, বা txn/bank_info ক্যাটাগরি) কখনো একসাথে হয় না।"""
+    def _is_txn(s):
+        return (s.get("amount", 0) or 0) > 0 or any(c.startswith("txn_") or c in ("bank_info", "travel_txn")
+                                                     for c in s.get("categories", []))
+    def _key(s):
+        snd = re.sub(r'\W', '', str(s.get("sender", "")).lower())
+        b = re.sub(r'\s+', ' ', str(s.get("body", ""))).strip()
+        if _is_personal_sender(s.get("sender", "")):
+            return ("p", snd, b)
+        t = re.sub(r'^(?:dear|প্রিয়|সম্মানিত)[^,،।]{0,30}[,،।]\s*', '', b, flags=re.I)   # সম্বোধন বাদ
+        t = re.sub(r'[\d\u09e6-\u09ef]+(?:[.,:/\-][\d\u09e6-\u09ef]+)*', '#', t)
+        t = re.sub(r'[^\w#\u0980-\u09ff ]', '', t)          # বিরামচিহ্ন/ভাঙা অক্ষর বাদ
+        t = re.sub(r'\s+', ' ', t).strip()[:50]               # শুরুর অংশ একই → একই ধরনের নোটিফিকেশন
+        # লিংক / ট্র্যাকিং / CN / অর্ডার / পিন নম্বর আলাদা হলে আলাদা পার্সেল-অর্ডার — একসাথে নয়
+        ids = set(re.findall(r'https?://\S+|www\.\S+|\b[\w\-]+\.(?:app|com|bd|xyz|ly|co)/\S+', b, re.I))
+        ids |= {re.sub(r'\s', '', x).upper() for x in re.findall(
+            r'(?:#|\b(?:CN|SL|PIN|ID|TRX\s*ID|ORDER|TRACKING|REF)\b[\s:#\-]*)\s*[A-Z]*\d[\w\-]*', b, re.I)}
+        ids |= set(re.findall(r'\d{5,}', b))
+        return ("n", snd, t, frozenset(ids))
+    groups = {}
+    for idx, s in enumerate(lst):
+        if _is_txn(s): continue
+        groups.setdefault(_key(s), []).append(idx)
+    drop = set()
+    for k, idxs in groups.items():
+        if len(idxs) < 2: continue
+        idxs.sort(key=lambda i: str(lst[i].get("date", "")))
+        keep = idxs[-1]
+        lst[keep] = dict(lst[keep])
+        _reps = []
+        for i in idxs[:-1]:
+            _d = str(lst[i].get("date", ""))[:16]
+            _m = re.search(r'(?:Tk\.?|৳|BDT)\s*([\d,]+(?:\.\d+)?)', str(lst[i].get("body", "")), re.I)
+            _reps.append(_d + (f" (Tk {_m.group(1)})" if _m else ""))
+        lst[keep]["_repeats"] = _reps
+        drop.update(idxs[:-1])
+    return [s for i, s in enumerate(lst) if i not in drop]
+
 def generate_html(sms_list, stats, out_path, tn=""):
     now = datetime.now().strftime("%d %B %Y, %I:%M %p")
 
@@ -2446,6 +2491,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
             _ftxn_by_ccy[ccy]["max"] = amt
 
     display_list = _non_ftxn + _ftxn_show
+    display_list = _collapse_repeats(display_list)   # একই নোটিফিকেশন বারবার → ১টি কার্ড
 
     # Intelligence metrics: timeline, counterparty, behavioral flags।
     # পূর্ণ BDT লেনদেন সেটে চালাই (ছোট bank_info txn সহ, বিদেশি মুদ্রা বাদে) —
@@ -2543,6 +2589,9 @@ def generate_html(sms_list, stats, out_path, tn=""):
             if ai.get("balance"):      pts.append(f'Balance: Tk {ai["balance"]:,.2f}')
             if pts: acct_mini=f'<div class="acct-mini">{" &nbsp;·&nbsp; ".join(pts)}</div>'
         merged_tag=(f'<span class="merged-tag">🔗 {s["parts"]} parts</span>' if s.get("parts",1)>1 else "")
+        _rep = s.get("_repeats") or []
+        rep_html = (f'<div class="rep-note">🔁 একই ধরনের মেসেজ আরও <b>{len(_rep)}</b> বার এসেছে: '
+                    + ", ".join(esc(d) for d in _rep) + '</div>') if _rep else ""
         cards+=f'''
         <div class="scard" id="card-{i}" data-tier="{t}" data-month="{s["month"]}" data-cats="{" ".join(s["categories"])}" data-dir="{direction}">
           <div class="sc-head">
@@ -2559,6 +2608,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
           </div>
           {acct_mini}
           <div class="sbody" style="background:{bg}">{hl_body(s["body"],s["amount"],_s_type,_ccy)}</div>
+          {rep_html}
           <div class="sc-foot">{cat_tags(s["categories"])}</div>
         </div>'''
     if not cards: cards='<div class="no-result"><div style="font-size:48px">✅</div><div>No SMS records found</div></div>'
