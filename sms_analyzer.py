@@ -688,6 +688,18 @@ COURIER_MSG_RE = re.compile(r'পার্সেল|parcel|\bCOD\b|ডেলি�
 COURIER_KEEP_RE = re.compile(r'https?://|www\.|\b[\w\-]+\.(?:app|com|net|org|bd|ly|me)/\S+|ready\s+at|ঠিকানা|address|'
                              r'office|অফিস|শাখা|branch|point|পয়েন্ট', re.I)
 
+# ফিডব্যাক / সার্ভে / লয়্যালটি-পয়েন্ট আমন্ত্রণ (যেমন "Share your experience … earn 30 points")
+FEEDBACK_PROMO_RE = re.compile(
+    r'share\s+your\s+(?:experience|feedback|opinion)|rate\s+(?:your|our)\s+(?:experience|service|visit)'
+    r'|(?:give|share|provide)\s+(?:us\s+)?(?:your\s+)?(?:valuable\s+)?feedback|feedback\s+(?:link|form|survey)'
+    r'|(?:take|complete)\s+(?:our|a|this)\s+(?:short\s+|quick\s+)?survey|earn\s+\d+\s*(?:bonus\s+)?(?:points|pts)'
+    r'|loyalty\s+points?|reward\s+points?\s+(?:balance|earned)|আপনার\s+মতামত\s+(?:দিন|জানান)|পয়েন্ট\s+(?:অর্জন|জিতুন|পান)', re.I)
+# ব্যাংক/প্রতিষ্ঠানের অনুরোধ-অভিযোগ নিষ্পত্তি নোটিফিকেশন ("Your Request/Query has been resolved … tracking ID")
+SERVICE_TICKET_RE = re.compile(
+    r'(?:request\s*/\s*query|request|query|complaint|ticket|issue)\s+has\s+been\s+'
+    r'(?:resolved|received|registered|closed|logged|recorded|forwarded)'
+    r'|অভিযোগ(?:টি)?\s+(?:গৃহীত|নিষ্পত্তি|সমাধান)', re.I)
+
 def _is_personal_sender(snd):
     d = re.sub(r'\D', '', str(snd))
     return bool(re.fullmatch(r'(?:880|0)?1[3-9]\d{8}', d))
@@ -732,6 +744,8 @@ def is_filtered(sender, body):
     _sn = re.sub(r'[\u200c\u200d\u09cd]', '', s)
     # OTP (অতিরিক্ত ফরম্যাট)
     if OTP_EXTRA_RE.search(body): return True
+    # ফিডব্যাক/সার্ভে/পয়েন্ট আমন্ত্রণ, আর অনুরোধ/অভিযোগ নিষ্পত্তির নোটিফিকেশন
+    if FEEDBACK_PROMO_RE.search(body) or SERVICE_TICKET_RE.search(body): return True
     # কোচিং/ভর্তি বিজ্ঞাপন: ব্র্যান্ড নাম থাকলে সবসময়; সাধারণ বিজ্ঞাপন-ভাষা হলে শুধু বাল্ক/ব্র্যান্ড sender থেকে
     if any(EDU_BRAND_RE.search(x) for x in (body, _bn, s, _sn)): return True
     if EDU_PROMO_RE.search(body) and not _is_personal_sender(s): return True
@@ -1091,9 +1105,11 @@ COURIER_RE = re.compile(
     r'|track\s+here\s*:?\s*https?://|scsapps\.\w+'
     r'|(?:parcel|fruits?|product|poly|consignment|goods|item|mango|lichi)[\w /]{0,30}?\s+ready\s+at\s+.{3,80}?office'
     r'|booking\s+confirmed\s+from\s+.{2,40}?(?:https?://|track)'
-    r'|track\s+at\s+https|parcel\s+id.*track|tracking\s+id'
+    r'|track\s+at\s+https|parcel\s+id.*track'
     r'|redx\.com\.bd/\S+|ecourier\.com\.bd/\S+|paperfly\.com\.bd/\S+'
-    r'|track(?:ing)?\s+(?:id|no|code)\s*[:#]?\s*\w{5,}'
+    # "tracking ID" শুধু কুরিয়ার-প্রসঙ্গ থাকলে (পার্সেল/কুরিয়ার/শিপমেন্ট বা লিংক) — ব্যাংকের অভিযোগ-ট্র্যাকিং আইডি নয়
+    r'|(?:parcel|courier|shipment|consignment|delivery|order|booking)[^.]{0,60}?track(?:ing)?\s+(?:id|no|code)'
+    r'|track(?:ing)?\s+(?:id|no|code)\s*[:#]?\s*\w{5,}[^.]{0,60}?(?:parcel|courier|shipment|consignment|delivery|https?://)'
     r'|bus\s+point.*dhaka|dhaka.*bus\s+point|seat.*reserved.*from.*to'  # bus ticket
     # Delivery status — শুধু tracking link/domain থাকলে রাখো
     r'|(?:parcel|shipment|order).*(?:picked\s+up|out\s+for\s+delivery|delivered\s+successfully|being\s+returned).*(?:https?://|steadfast|ptho|redx|track)'
