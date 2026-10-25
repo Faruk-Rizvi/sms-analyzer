@@ -593,6 +593,14 @@ SKIP_BODY_RE = re.compile(
     # Happy New Year from brands/orgs (আগে থেকেই আংশিক আছে, শক্তিশালী করছি)
     r"|happy\s+new\s+year\s+202[0-9]|happy\s+new\s+year.*(?:family|contact|call|visit)"
     r"|শুভ\s+নববর্ষ\s+202[0-9]|নববর্ষের\s+(?:শুভেচ্ছা|আন্তরিক|উষ্ণ)"
+
+    # Fit Elegance টেইলরিং / Fit Basics ফ্যাব্রিক্স promo
+    r"|fit\s*elegance|ফিট\s*এলিগ্যান্স|fit\s*basics|ফিট\s*বেসিক্স"
+    # bKash ক্যাশব্যাক / অ্যাপ হালনাগাদ promo ("৳৫০ ক্যাশব্যাক পেতে এখনই বিকাশ অ্যাপে")
+    r"|ক্যাশব্যাক\s*পেতে|বিকাশ\s*অ্যাপে\s*তথ্য\s*হালনাগাদ|তথ্য\s*হালনাগাদ\s*কর"
+    # Grievance submission notification (tracking number) — সিস্টেম নোটিফিকেশন, ইন্টেলিজেন্স ভ্যালু নেই
+    r"|a\s*new\s*grievance\s*is\s*submitted|grievance\s*is\s*submitted\s*with\s*tracking"
+    r"|অভিযোগ\s*দাখিল.*ট্র্যাকিং|নতুন\s*অভিযোগ\s*দাখিল"
     ,
     re.I | re.S)
 
@@ -636,10 +644,106 @@ OTP_BODY_RE = re.compile(
     r'|proceed\s+with\s+(?:npsb|rtgs|within\s+bank|other\s+bank)[^\n]{0,60}\b\d{4,8}\b',
     re.I)
 
+# ── Transaction guard — আসল লেনদেন কখনো ফিল্টার হবে না ──────────────────────
+# অপারেটরের নাম (Grameenphone/Banglalink) merchant payment-এ থাকলেও যেন
+# প্রোমো ভেবে বাদ না পড়ে — confirmed money-movement মেসেজ সবসময় রাখি।
+TXN_GUARD_RE = re.compile(
+    r'(?:payment\s+of\s+tk\s*[\d,]+.*?(?:successful|complete)'
+    r'|received\s+tk\s*[\d,]+\s+from'
+    r'|cash\s*(?:in|out)\s+tk\s*[\d,]+'
+    r'|cash\s*in\s+received.*?amount:\s*tk\s*[\d,]+'
+    r'|money\s+received.*?amount:\s*tk\s*[\d,]+'
+    r'|payment\s+to\s+.{1,60}?\s+is\s+successful.*?amount:\s*tk\s*[\d,]+'
+    r'|(?:credited|debited)\s+(?:with|from|for)\s+bdt\s*[\d,]+'
+    r'|transaction\s+of\s+bdt\s*[\d,]+\s+(?:credited|debited)'
+    r'|loan\s+(?:repayment|disbursement).*?tk\s*[\d,]+'
+    r'|received\s+(?:digital\s+)?loan)',
+    re.I | re.S)
+
+# ── কোচিং / ভর্তি বিজ্ঞাপন ──
+EDU_BRAND_RE = re.compile(
+    r'উদ্ভাস|udvash|উন্মেষ|unmesh|রেটিনা|\bretina\b|সাইফুর[\'’]?স|saifurs|অগ্রণী\s*কোচিং|মেডিকো\s*কোচিং|'
+    r'10\s*minute\s*school|টেন\s*মিনিট\s*স্কুল|shikho|শিখো|প্যারাগন\s*কোচিং|ইউসিসি\b|\bUCC\b\s*কোচিং|'
+    r'ফোকাস\s*(?:কোচিং|এডমিশন)|উত্তরণ\s*কোচিং|e-?sho\s*shikhi', re.I)
+EDU_PROMO_RE = re.compile(
+    r'(?:ভর্তি|এডমিশন|admission|মডেল\s*টেস্ট|model\s*test|ব্যাচ|batch|কোর্স|course|রিভিশন|ওরিয়েন্টেশন|কোচিং)'
+    r'.{0,80}?(?:ছাড়|শেষ\s*দিন|চলছে|শুরু|discount|offer|সীমিত\s*সময়|[\d০-৯,]+\s*/-)'
+    r'|(?:ছাড়|discount)[^।]{0,40}?ভর্তি', re.I | re.S)
+TUTOR_AD_RE = re.compile(
+    r'(?:যোগ্য|অভিজ্ঞ|দক্ষ|ভেরিফাইড|মেধাবী|verified|experienced)[^।\n]{0,40}?টিউটর[^।\n]{0,30}?(?:পেতে|খুঁজে|কল\s*করুন|যোগাযোগ)'
+    r'|টিউটর\s*(?:পেতে|খুঁজে\s*পেতে)[^।\n]{0,20}?(?:কল|যোগাযোগ)|home\s*tutor[^.\n]{0,30}?(?:call|contact)', re.I)
+# ── রিয়েল এস্টেট বিজ্ঞাপন ──
+REALESTATE_BRAND_RE = re.compile(
+    r'শেলটেক|sheltech|\bbti\b|building\s+technology|rangs\s+properties|navana\s+real|concord\s+real|'
+    r'assure\s+group|anwar\s+landmark|\bjcx\b|shanta\s+holdings|principal\s+group|edison\s+real|'
+    r'amin\s+mohammad|asset\s+developments|bashundhara\s+(?:plot|land)|পূর্বাচল\s*আমেরিকান\s*সিটি', re.I)
+REALESTATE_AD_RE = re.compile(
+    r'(?:ফ্ল্যাট|flat|apartment|অ্যাপার্টমেন্ট|প্লট|plot|কমার্শিয়াল\s*স্পেস|commercial\s*space|office\s*space|দোকান|প্রপার্টি|property)'
+    r'.{0,120}?(?:বুকিং\s*(?:চলছে|করুন)|বিক্রয়\s*চলছে|for\s*sale|কিস্তি\s*সুবিধা|luxury|south\s*facing|\bSFT\b|'
+    r'বিনিয়োগ\s*করুন|নিশ্চিত\s*রিটার্ন|হ্যান্ডওভার|handover)', re.I | re.S)
+# ── কুরিয়ার: ঠিকানা/লিংক ছাড়া রুটিন নোটিফিকেশন বাদ ──
+COURIER_ANY_RE = re.compile(r'pathao|redx|steadfast|sundarban|ecourier|paperfly|sa\s*paribahan|delivery\s*tiger|carrybee|'
+                        r'janani\s*express|korotoa|সুন্দরবন\s*কুরিয়ার|কুরিয়ার|courier', re.I)
+COURIER_MSG_RE = re.compile(r'পার্সেল|parcel|\bCOD\b|ডেলিভারি|delivery|পণ্য\s*সংগ্রহ|consignment|shipment', re.I)
+COURIER_KEEP_RE = re.compile(r'https?://|www\.|\b[\w\-]+\.(?:app|com|net|org|bd|ly|me)/\S+|ready\s+at|ঠিকানা|address|'
+                             r'office|অফিস|শাখা|branch|point|পয়েন্ট', re.I)
+
+def _is_personal_sender(snd):
+    d = re.sub(r'\D', '', str(snd))
+    return bool(re.fullmatch(r'(?:880|0)?1[3-9]\d{8}', d))
+
+# প্রিপেইড বিদ্যুৎ মিটার টোকেন মেসেজ (মূল মেসেজ + আলাদা হয়ে যাওয়া খণ্ডাংশ)
+METER_TOKEN_RE = re.compile(
+    r'prepaid\s+token\s+\d{4}[\s\-]?\d{4}'                          # "DPDC Prepaid Token 3413-0050-..."
+    r'|\btoken\s*(?:no\.?|number)?\s*[:#]?\s*\d{4}-\d{4}-\d{4}-\d{4}'  # "Token: 1234-5678-9012-3456"
+    r'|energy\s+cost\s*:.*?demand\s+charge\s*:.*?meter\s+rent'          # টোকেনের খণ্ডাংশ
+    r'|মিটার\s*টোকেন|প্রিপেইড\s*টোকেন',
+    re.I | re.S)
+
+# ব্যাংক লোন/প্রোডাক্ট বিজ্ঞাপন (সেলস পিচ, আসল লেনদেন নয়) — বাদ
+BANK_AD_RE = re.compile(
+    r'(?:personal|car|home|auto)\s+loan[!\s].*?(?:up\s+to|lac|lacs|lakh|crore|emi|approval|contact)'
+    r'|up\s+to\s+bdt\s*[\d,]+\s*(?:lac|lacs|lakh|crore)'
+    r'|(?:easy|flexible)\s+emi.*?(?:approval|contact|offer)'
+    r'|🔹\s*(?:car|home|personal)\s+loan'
+    r'|loan\s+offer[!\s].*?(?:lac|emi|approval)'
+    r'|(?:fdr|dps)\b.*?(?:easy|attractive|processing)'
+    r'|if\s+you\s+want\s+to\s+take\s+a\s+(?:personal|home|car)\s+loan'
+    r'|(?:personal|home|car)\s+loan.*?(?:takeover|for\s+details,?\s+contact)',
+    re.I | re.S)
+
 def is_filtered(sender, body):
     s  = str(sender).strip()
     sl = s.lower()
     st = stype(s, body)
+    # আসল লেনদেন হলে কখনো ফিল্টার করো না (OTP ছাড়া — OTP আলাদা হ্যান্ডল হয়)
+    if TXN_GUARD_RE.search(body) and not OTP_BODY_RE.search(body):
+        return False
+    # ব্যাংক লোন/প্রোডাক্ট বিজ্ঞাপন — ইন্টেলিজেন্স ভ্যালু নেই, বাদ
+    if BANK_AD_RE.search(body):
+        return True
+    # প্রিপেইড মিটার টোকেন (DPDC/DESCO/NESCO ইত্যাদি) — টোকেন নম্বর ও বিলের খুঁটিনাটি, বাদ।
+    # (bKash/ব্যাংকের "Bill successfully paid" আসল টাকার লেনদেন — সেটা উপরের guard-এ রক্ষা পায়;
+    #  "Tax-Token" গাড়ির ট্যাক্স টোকেন — মিটার টোকেন নয়, তাই রাখা হয়)
+    if METER_TOKEN_RE.search(body) or sl in ("meter token", "metertoken"):
+        return True
+    # বাংলা নামের অদৃশ্য অক্ষর (ZWNJ/ZWJ) সরিয়ে মেলাই — যেমন "শেল্‌টেক্‌"
+    _bn = re.sub(r'[\u200c\u200d\u09cd]', '', body)
+    _sn = re.sub(r'[\u200c\u200d\u09cd]', '', s)
+    # OTP (অতিরিক্ত ফরম্যাট)
+    if OTP_EXTRA_RE.search(body): return True
+    # কোচিং/ভর্তি বিজ্ঞাপন: ব্র্যান্ড নাম থাকলে সবসময়; সাধারণ বিজ্ঞাপন-ভাষা হলে শুধু বাল্ক/ব্র্যান্ড sender থেকে
+    if any(EDU_BRAND_RE.search(x) for x in (body, _bn, s, _sn)): return True
+    if EDU_PROMO_RE.search(body) and not _is_personal_sender(s): return True
+    if TUTOR_AD_RE.search(body): return True
+    # রিয়েল এস্টেট বিজ্ঞাপন: ডেভেলপারের নাম, বা ফ্ল্যাট/প্লট + বিজ্ঞাপনের ভাষা
+    if any(REALESTATE_BRAND_RE.search(x) for x in (body, _bn, s, _sn)):
+        return True
+    if REALESTATE_AD_RE.search(body): return True
+    # কুরিয়ার: লিংক বা ঠিকানা/পিকআপ-স্থান না থাকলে বাদ (প্রোফাইল-সূত্রে আগেই সংগ্রহ হয়)
+    if (COURIER_ANY_RE.search(body) or COURIER_ANY_RE.search(s)) and COURIER_MSG_RE.search(body) \
+            and not COURIER_KEEP_RE.search(body):
+        return True
     # OTP sender names — always filter
     if sl in OTP_SENDERS: return True
     # Named promo/brand senders — always filter
@@ -795,6 +899,11 @@ def merge(sms_list):
 
 # ── লেনদেন পরিমাণ ──────────────────────────────────────────
 TXN_P = [
+    # Cash Out ভ্যারিয়েন্ট — "cashed out", হাইফেন "Cash-Out", বাংলা "ক্যাশ আউট"
+    r'cashed\s+out\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    r'[Cc]ash[\s\-]*[Oo]ut\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
+    r'ক্যাশ\s*আউট\s+[Tt][Kk]\.?\s*([\d,\u09e6-\u09ef]+\.?\d*)',
+    r'ক্যাশ\s*আউট\s+([\d,\u09e6-\u09ef]+\.?\d*)\s*টাকা',
     r'received\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)\s+from',
     r'received\s+deposit.*?of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',
     r'received\s+a\s+deposit\s+of\s+[Tt][Kk]\.?\s*([\d,]+\.?\d*)',  # bKash from bank
@@ -856,6 +965,50 @@ TXN_P = [
     r'([\d,]+\.?\d*)\s*টাকা\s+(?:পেয়েছেন|জমা\s*হয়েছে)',
     r'([\d,]+\.?\d*)\s*টাকা\s+ক্যাশ\s*আউট',
     r'[Pp]aid[:\s]*([\d,]+)',
+    # ── v13: পূর্বে বাদ-পড়া ফরম্যাট (Janata/AB Bank/bKash/Nagad/ATM) ──────────
+    # Janata Bank PLC: "account *7637 debited with BDT  64000.00 from"
+    r'(?:credited|debited)\s+with\s+BDT\s*([\d,]+\.?\d*)',
+    # Janata interest line: "credited for interest: BDT2.13"
+    r'(?:credited|debited)\s+for\s+interest:\s*BDT\s*([\d,]+\.?\d*)',
+    # AB Bank i-banking: "Income Tax Transaction of BDT 900 debited from A/C"
+    r'Transaction\s+of\s+BDT\s*([\d,]+\.?\d*)\s+(?:credited|debited)',
+    # bKash: "received Tk 5,000.00 from" (Tk mixed-case, not only TK)
+    r'received\s+[Tt]k\s*([\d,]+\.?\d*)\s+from',
+    # bKash: "Payment of Tk 1,410.00 to / is being reserved for"
+    r'[Pp]ayment\s+of\s+[Tt]k\s*([\d,]+\.?\d*)\s+(?:to|is\s+being\s+reserved)',
+    # bKash: "received deposit from iBanking of Tk 5,000.00 from Janata Bank"
+    r'received\s+deposit\s+from\s+iBanking\s+of\s+[Tt]k\s*([\d,]+\.?\d*)',
+    # AB credit card: "BDT 500.00 received by CASH to your credit card"
+    r'BDT\s*([\d,]+\.?\d*)\s+received\s+by',
+    # AB Bank card payment: "AB Bank: Payment BDT 28137.00 from ABDIRECT"
+    r'Payment\s+BDT\s*([\d,]+\.?\d*)\s+from',
+    # Generic bank ATM/interest: "debited (ATM Cash Withdrawal) by Tk3,500.00"
+    r'debited\s+\([^)]*\)\s+by\s+[Tt]k\s*([\d,]+\.?\d*)',
+    r'credited\s+\([^)]*\)\s+by\s+[Tt]k\s*([\d,]+\.?\d*)',
+    # AB Card Bill: "Total Due: 17067.36BDT"
+    r'[Tt]otal\s+Due:\s*([\d,]+\.?\d*)\s*BDT',
+    # Islami Bank Hospital receipt: "Received with thanks total Tk.  17000-"
+    r'Received\s+with\s+thanks\s+total\s+[Tt]k\.?\s*([\d,]+)',
+    # ── v14: Sonali Bank + DNCC holding tax ফরম্যাট ──────────────────────────
+    # Sonali: "credited/debited from [Branch] for BDT 78,106.00 on" (lakh grouping 4,00,000)
+    r'(?:credited|debited)\s+from\s+.+?\s+for\s+BDT\s*([\d,]+\.?\d*)\s+on',
+    # Sonali: "with [Branch] has been credited for BDT 7,78,819.00 on"
+    r'has\s+been\s+credited\s+for\s+BDT\s*([\d,]+\.?\d*)\s+on',
+    # Sonali interest line: "Credited for Interest: BDT 68.00"
+    r'[Cc]redited\s+for\s+Interest:\s*BDT\s*([\d,]+\.?\d*)',
+    # Sonali charge line: "Debited for Maintenance Charge: BDT 200.00"
+    r'[Dd]ebited\s+for\s+(?:Maintenance|SMS|TDS|VAT|Charge).*?BDT\s*([\d,]+\.?\d*)',
+    # DNCC / municipal tax: "Tk5,132.16 paid to DNCC Holding Tax"
+    r'[Tt]k\s*([\d,]+\.?\d*)\s+paid\s+to',
+    # ── v15: bKash Digital Loan (City Bank) + payment-successful (no 'to') ──
+    # "Digital Loan Repayment of Tk 1,009.24 is successful"
+    r'Loan\s+Repayment\s+of\s+[Tt]k\s*([\d,]+\.?\d*)',
+    # "received Loan of Tk 2,983" / "received Digital Loan Tk 2,000"
+    r'received\s+(?:Digital\s+)?Loan\s+(?:of\s+)?[Tt]k\s*([\d,]+\.?\d*)',
+    # "Payment of Tk 1,410.00 is successful" (no 'to' / 'reserved')
+    r'[Pp]ayment\s+of\s+[Tt]k\s*([\d,]+\.?\d*)\s+is\s+successful',
+    # Nagad/bKash bill: "Amount: Tk 2000.00" (append LAST — most generic)
+    r'Amount:\s*[Tt]k\s*([\d,]+\.?\d*)',
 ]
 
 def get_amount(text):
@@ -992,6 +1145,9 @@ BO_RE = re.compile(
     r'|demat\s+account|portfolio.*shares?'
     , re.I)
 
+# অতিরিক্ত OTP ফরম্যাট: "Submit OTP :257267", "OTP: 1234", "OTP-123456" ইত্যাদি
+OTP_EXTRA_RE = re.compile(r'\bOTP\s*[:：\-]?\s*(?:is\s*)?[:：]?\s*\d{4,8}\b|\b\d{4,8}\s+is\s+(?:the|your)\s+(?:OTP|code)\b'
+                          r'|ওটিপি\s*[:：]?\s*[\d০-৯]{4,8}|গোপন\s*(?:কোড|নম্বর)', re.I)
 OTP_RE = OTP_BODY_RE  # alias — same regex
 LOW_BAL_RE = re.compile(r'your\s+balance\s+is\s+(very\s+low|finished)', re.I)
 
@@ -1162,6 +1318,39 @@ def analyze_one(sender, body, date, direction=""):
             "amount":amt,"tier":t,"acct":acct,"direction":direction}
 
 # ── একাউন্ট তথ্য ───────────────────────────────────────────
+def _norm_acct_id(x):
+    """Masking char normalize: x/X → *, runs → single *****।"""
+    x = re.sub(r'[xX]', '*', x)
+    x = re.sub(r'\*{2,}', '*****', x)
+    return x
+
+def extract_account_id(body):
+    """মেসেজ থেকে account/card identifier ও ধরন বের করে।
+    Returns (display_id, acct_type, canon_key) বা (None, None, None)।
+    acct_type: 'card' (ক্রেডিট/ডেবিট কার্ড) | 'account' (সাধারণ একাউন্ট)।
+    canon_key = type + last-4 digit — একই কার্ড/একাউন্টের ভিন্ন masking এক গোনা হয়।"""
+    b = body
+    did = typ = None
+    # ── CARD আগে (card মেসেজে A/C-ও থাকতে পারে) ──
+    m = re.search(r'(?:credit\s+card|debit\s+card|\bcard)\s*[:#]?\s*(\d{3,6}[\*xX]{1,}\d{3,6})', b, re.I)
+    if m: did, typ = _norm_acct_id(m.group(1)), 'card'
+    if not did:
+        m = re.search(r'card\s+ending\s+(\d{4,6})', b, re.I)
+        if m: did, typ = _norm_acct_id(m.group(1)), 'card'
+    if not did:
+        m = re.search(r'\b(\d{6}[\*xX]{4,8}\d{4})\b', b)   # 16-digit card BIN
+        if m: did, typ = _norm_acct_id(m.group(1)), 'card'
+    # ── ACCOUNT ──
+    if not did:
+        m = re.search(r'(?:A/C|A/c|account|acc\.?)\s*(?:no\.?|#|id)?\s*[:.]?\s*'
+                      r'(\d{0,6}[\*xX]{2,}\d{3,6}|\*{1,}\d{4,6})', b, re.I)
+        if m: did, typ = _norm_acct_id(m.group(1)), 'account'
+    if not did:
+        return None, None, None
+    last4 = re.sub(r'\D', '', did)[-4:]
+    canon = f"{typ}:{last4}"
+    return did, typ, canon
+
 def get_acct(sender, body, amt):
     sl = str(sender).lower()
     s  = str(sender).strip()
@@ -1191,6 +1380,7 @@ def get_acct(sender, body, amt):
         elif "standardbnk" in sl or "standard bank" in sl or "standard islami" in sl:
             info["service"]="Standard Bank"
         elif "sonali"   in sl: info["service"]="Sonali Bank"
+        elif re.search(r'\bab\s*bank\b|\babbank\b', sl): info["service"]="AB Bank"
         elif "brac"     in sl: info["service"]="BRAC Bank"
         elif "metlife"  in sl: info["service"]="MetLife"
         elif "stanchart" in sl or "stancharbd" in sl: info["service"]="Standard Chartered Bank"
@@ -1247,7 +1437,25 @@ def get_acct(sender, body, amt):
 
     trx = re.search(r'(?:[Tt]rx|[Tt]xn)\s*[Ii][Dd]?[:\s]+([A-Z0-9]{8,})', body)
     if trx: info["trx_id"]=trx.group(1)
+    # বিল-পেমেন্ট: "Biller: DPDC (PREPAID) A/C: 15713091 Contact: 017…" — Contact নম্বরটা
+    # গ্রাহকের নিজের, কাউন্টারপার্টি নয়। তাই অপর পক্ষ = বিলার।
+    _bm = re.search(r'Biller\s*:\s*([A-Za-z][A-Za-z0-9 .&\-]*?)\s*(?:\(([A-Za-z ]+)\))?\s*(?:A/C|Account|Contact|Amount|,|$)', body)
+    if _bm:
+        info["biller"] = (_bm.group(1).strip() + (f" ({_bm.group(2).strip()})" if _bm.group(2) else "")).strip()
+        _ba = re.search(r'Biller\s*:.*?A/C\s*:\s*(\d{4,})', body)
+        if _ba: info["biller_acct"] = _ba.group(1)
+    # মার্চেন্ট পেমেন্ট: "Payment of Tk 1,410.00 to Shohoj Limited-1 is successful" /
+    # Nagad "Payment to 'MY GP' is Successful"
+    _mm = re.search(r"payment\s+(?:of\s+tk\s*[\d,.]+\s+)?to\s+'?(.+?)'?\s+(?:is\s+)?(?:successful|being\s+reserved)", body, re.I)
+    if _mm and not _bm:
+        _mn = _mm.group(1).strip()
+        _mn = re.sub(r'-(?:RM|MYGP)[\w\-]*$', '', _mn)
+        _mn = re.sub(r'-\d+$', '', _mn).strip(" -'")
+        if _mn and not re.match(r'^01\d{9}$', _mn): info["merchant"] = _mn
     nums = re.findall(r'\b(01[3-9]\d{8})\b', body)
+    if _bm:   # বিলের Contact নম্বর বাদ
+        _cm = re.search(r'Contact\s*:\s*(01[3-9]\d{8})', body)
+        nums = [n for n in nums if not (_cm and n == _cm.group(1))]
     if nums: info["other_number"]=nums[0]
 
     # Balance — সব bank format cover করে
@@ -1279,6 +1487,15 @@ def get_acct(sender, body, amt):
     if acc_m:
         # trailing asterisks বাদ দিই — "857**00008501**" → "857**00008501"
         info["account"] = re.sub(r'\*+$', '', acc_m.group(1))
+
+    # নতুন: robust account/card identifier + ধরন (card vs account) শনাক্ত
+    _aid, _atype, _acanon = extract_account_id(body)
+    if _aid:
+        info["acct_id"]   = _aid
+        info["acct_type"] = _atype       # 'card' | 'account'
+        info["acct_canon"] = _acanon     # একই account/card merge করার key
+        if not info.get("account"):
+            info["account"] = _aid
 
     bl2 = body.lower()
 
@@ -1330,8 +1547,9 @@ def get_acct(sender, body, amt):
                    r'|পেয়েছেন|ক্যাশ\s*ইন|জমা\s*হয়েছে'
                    r'|interest\s+peyechhen|interest\s+পেয়েছেন', bl2):
         info["direction"] = "Received"
-    elif re.search(r'\bcash\s*out\b|\bpurchase\b|\bpos\s+purchase\b'
+    elif re.search(r'\bcash[\s\-]*out\b|\bcashed\s+out\b|\bpurchase\b|\bpos\s+purchase\b'
                    r'|\bpayment\s+(?:of\s+)?tk.*to\b|\bpayment\s+of\b|\bpaid\b'
+                   r'|\bpayment\s+to\b'                       # Nagad: "Payment to 'X' is Successful. Amount: Tk"
                    r'|\bsend\s+money\b|\bsent\b'
                    r'|\bpay\s*bill\b|\brequest\s+of\s+tk.*processed'
                    r'|ক্যাশ\s*আউট|পাঠিয়েছেন|উত্তোলন\s*করেছেন', bl2):
@@ -1543,7 +1761,8 @@ def build_bank_summary(sms_list, extra_balances=None):
     summ = defaultdict(lambda:{
         "service":"","txn_count":0,"total_in":0.0,"total_out":0.0,
         "last_balance":0.0,"last_balance_date":"","max_txn":0.0,"numbers":set(),
-        "accounts": defaultdict(lambda:{"balance":0.0,"balance_date":"","txn_count":0})
+        "accounts": defaultdict(lambda:{"balance":0.0,"balance_date":"","txn_count":0,
+                                        "type":"account","display":"","in":0.0,"out":0.0})
     })
     SVC_COL = {
         "bKash":"#e11d48","Nagad":"#ea580c","Rocket":"#7c3aed","Upay":"#16a34a",
@@ -1572,33 +1791,50 @@ def build_bank_summary(sms_list, extra_balances=None):
         d["seen"] = True   # এই bank-এর অন্তত একটি SMS পাওয়া গেছে — sidebar-এ দেখাও
 
         amt = ai.get("amount",0) or 0
+        _dir = (ai.get("direction","") or "")
+        body_lower = s.get("body","").lower()
+        # কার্ড বিল স্টেটমেন্ট (Total Due/Min Due) — লেনদেন নয়, শুধু তথ্য → IN/OUT-এ গোনা হবে না
+        _is_statement = bool(re.search(r'card\s+bill.*(?:total\s+due|min\s+due)', body_lower))
         if amt > 0:
             d["txn_count"] += 1
             # txn type body থেকে detect — investment/internal হলে আলাদা bucket
-            body_lower = s.get("body","").lower()
             is_internal = any(t in body_lower for t in INTERNAL_TXN_TYPES)
-            if is_internal:
+            if is_internal or _is_statement:
                 d["total_cycling"] = d.get("total_cycling", 0.0) + amt
-            elif "Received" in (ai.get("direction","") or ""):
+            elif _dir == "Received":
                 d["total_in"]  += amt
-            else:
+            elif _dir == "Sent":
                 d["total_out"] += amt
+            else:
+                # direction অনিশ্চিত — ভুল দিকে না গুনে আলাদা bucket-এ রাখি
+                d["total_cycling"] = d.get("total_cycling", 0.0) + amt
             if amt > d["max_txn"]: d["max_txn"] = amt
 
-        # per-account balance tracking
-        acc_no = ai.get("account","")
+        # per-account/card tracking — canonical key দিয়ে (card vs account আলাদা)
+        acc_canon = ai.get("acct_canon","") or ai.get("account","")
+        acc_disp  = ai.get("acct_id","") or ai.get("account","")
+        acc_type  = ai.get("acct_type","") or "account"
         sms_date = str(s.get("date",""))
         bal = ai.get("balance",0) or 0
+        if acc_canon:
+            acc_entry = d["accounts"][acc_canon]
+            acc_entry["txn_count"] += 1
+            acc_entry["type"] = acc_type
+            # সবচেয়ে বিস্তারিত display form রাখি (বেশি সংখ্যা দেখা যায় যেটায়)
+            _digits = len(re.sub(r'\D','',acc_disp))
+            if _digits >= len(re.sub(r'\D','',acc_entry.get("display",""))):
+                acc_entry["display"] = acc_disp
+            if amt > 0 and not _is_statement:
+                if _dir == "Received":
+                    acc_entry["in"] = acc_entry.get("in",0.0) + amt
+                elif _dir == "Sent":
+                    acc_entry["out"] = acc_entry.get("out",0.0) + amt
+                # blank direction → account-level in/out-এও গোনা হবে না
+            if bal > 0 and sms_date > acc_entry["balance_date"]:
+                acc_entry["balance"]      = bal
+                acc_entry["balance_date"] = sms_date
         if bal > 0:
-            # account-level last balance (তারিখ অনুযায়ী)
-            if acc_no:
-                acc_entry = d["accounts"][acc_no]
-                acc_entry["txn_count"] += 1
-                if sms_date > acc_entry["balance_date"]:
-                    acc_entry["balance"]      = bal
-                    acc_entry["balance_date"] = sms_date
-            # service-level last balance — সব account-এর সর্বশেষ balance এর সমষ্টি নয়,
-            # বরং সর্বশেষ date-এর balance (single-account case-এ সঠিক থাকে)
+            # service-level last balance — সর্বশেষ date-এর balance
             if sms_date > d["last_balance_date"]:
                 d["last_balance"] = bal
                 d["last_balance_date"] = sms_date
@@ -1618,7 +1854,10 @@ def build_bank_summary(sms_list, extra_balances=None):
             **{k:v for k,v in d.items() if k not in ("accounts",)},
             "numbers": list(d["numbers"])[:4],
             "color": SVC_COL.get(svc, "#2563eb"),
-            "accounts": {k: {"balance": v["balance"], "txn_count": v["txn_count"]}
+            "accounts": {k: {"balance": v["balance"], "txn_count": v["txn_count"],
+                             "type": v.get("type","account"),
+                             "display": v.get("display",k),
+                             "in": v.get("in",0.0), "out": v.get("out",0.0)}
                          for k,v in accs.items() if v["txn_count"] > 0},
             "display_balance": display_balance,
             "multi_account": len(accs) > 1,
@@ -1643,17 +1882,510 @@ def build_bank_summary(sms_list, extra_balances=None):
     return result
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  INTELLIGENCE METRICS — Timeline, Counterparty, Behavioral flags
+# ════════════════════════════════════════════════════════════════════════════
+def _im_parse_dt(s):
+    """তারিখ string → datetime (একাধিক ফরম্যাট সহ্য করে)।"""
+    s = str(s).strip()
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try: return datetime.strptime(s[:19].strip() if len(s) >= 19 else s, fmt)
+        except: pass
+    m = re.search(r'(\d{4})-(\d{2})-(\d{2})[ T]?(\d{2})?:?(\d{2})?', s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                            int(m.group(4) or 0), int(m.group(5) or 0))
+        except: return None
+    return None
+
+def _im_eff_dir(s):
+    """লেনদেনের কার্যকর দিক: IN (credit) না OUT (debit)।
+    credit/debit chart-এর মতো একই লজিক — সামঞ্জস্য বজায় রাখে।"""
+    ai = s.get("acct", {}) or {}
+    _st = s.get("sender_type", ""); _ad = ai.get("direction", ""); _dir = s.get("direction", "")
+    if _st in ("mfs", "bank") and _ad: return "IN" if _ad == "Received" else "OUT"
+    if _dir == "SMSMT": return "IN"
+    if _dir == "SMSMO": return "OUT"
+    if _ad == "Received": return "IN"
+    if _ad == "Sent": return "OUT"
+    return ""
+
+def _im_acct_lbl(a):
+    """একাউন্ট/কার্ড লেবেল — যেমন "A/C 1111*****50314" বা "Card 5457*****4686"।"""
+    aid = (a or {}).get("acct_id", "")
+    if not aid: return ""
+    return ("Card " if (a or {}).get("acct_type") == "card" else "A/C ") + aid
+
+_IM_KIND = [
+    (r'deposit\s+from\s+ibanking',              'iBanking deposit'),
+    (r'cash\s*deposit',                           'Cash deposit'),
+    (r'fund\s*transfer',                          'Fund transfer (iBanking)'),
+    (r'\bnpsb\b',                                'NPSB transfer'),
+    (r'\bbeftn\b',                               'BEFTN transfer'),
+    (r'\brtgs\b',                                'RTGS transfer'),
+    (r'cheque',                                   'Cheque'),
+    (r'po\s*en(?:c)?hashed|pay\s*order',          'Pay order encashed'),
+    (r'\batm\b',                                 'ATM withdrawal'),
+    (r'cash[\s\-]*out|cashed\s+out|ক্যাশ\s*আউট',   'Cash-out (agent)'),
+    (r'cash\s*in',                                'Cash-in (agent)'),
+    (r'send\s+money|\bsent\b|পাঠিয়েছেন',          'Send money'),
+    (r'payment\s+bdt.*?to\s+card',                'Card bill payment'),
+    (r'\bpayment\b|\bpaid\b|bill',                'Payment'),
+    (r'\breceived\b|পেয়েছেন',                    'Received'),
+    (r'credited|debited|transfer',                'Bank transfer'),
+]
+
+def _im_party(s, side):
+    """লেনদেনের অপর পক্ষ/উৎস/গন্তব্য — মোবাইল নম্বর, ব্যাংক, মার্চেন্ট বা লেনদেনের ধরন।"""
+    a = s.get("acct", {}) or {}
+    b = s.get("body", "") or ""
+    kind = next((lbl for p, lbl in _IM_KIND if re.search(p, b, re.I)), "")
+    who = a.get("other_number", "") or ""
+    if not who:
+        m = re.search(r'from\s+ibanking.*?from\s+([A-Za-z][A-Za-z .&]+?\bBank)', b, re.I)
+        if m: who = m.group(1).strip()
+    if not who:
+        m = re.search(r'\bfrom\s+(ABDIRECT|[A-Z]{4,}DIRECT)', b)
+        if m: who = m.group(1) + " (online banking)"
+    if not who and side == "OUT":   # "To Card …" গন্তব্য — শুধু OUT পাশে প্রযোজ্য
+        m = re.search(r'\bto\s+card\s+(\d+\*+\d+)', b, re.I)
+        if m: who = "Card " + _norm_acct_id(m.group(1))
+    if not who and side == "OUT":
+        m = re.search(r"\bto\s+'?([A-Za-z][\w&.\- ]{2,40}?)'?\s+(?:is\s+)?successful", b, re.I)
+        if m: who = m.group(1).strip()
+    if who and kind: return f"{who} · {kind}"
+    return who or kind or "—"
+
+def compute_intel_metrics(display_list, own=""):
+    """Timeline, counterparty ranking ও behavioral flag হিসাব করে।"""
+    from collections import defaultdict
+    M = {}
+    txns = [s for s in display_list if (s.get("amount", 0) or 0) > 0]
+
+    # ── ক: Timeline / সময়-প্যাটার্ন ──
+    monthly = defaultdict(lambda: {"in": 0.0, "out": 0.0, "cnt": 0})
+    hours = Counter(); night = []; dts = []
+    for s in txns:
+        amt = s["amount"]; eff = _im_eff_dir(s); mon = s.get("month", "")
+        if mon:
+            if eff == "IN":  monthly[mon]["in"]  += amt
+            elif eff == "OUT": monthly[mon]["out"] += amt
+            monthly[mon]["cnt"] += 1
+        dt = _im_parse_dt(s.get("date", ""))
+        if dt:
+            dts.append(dt); hours[dt.hour] += 1
+            if 0 <= dt.hour <= 5: night.append((dt, amt, eff, s))
+    M["monthly"]   = dict(sorted(monthly.items()))
+    M["night_cnt"] = len(night)
+    M["night_total"] = sum(x[1] for x in night)
+    M["night_items"] = sorted(night, key=lambda x: x[0])
+    M["first_dt"]  = min(dts) if dts else None
+    M["last_dt"]   = max(dts) if dts else None
+    M["active_days"] = ((max(dts) - min(dts)).days + 1) if dts else 0
+    buckets = {"Night (12AM–6AM)": 0, "Morning (6AM–12PM)": 0,
+               "Afternoon (12PM–6PM)": 0, "Evening (6PM–12AM)": 0}
+    for h, c in hours.items():
+        if   0 <= h < 6:  buckets["Night (12AM–6AM)"] += c
+        elif h < 12:      buckets["Morning (6AM–12PM)"] += c
+        elif h < 18:      buckets["Afternoon (12PM–6PM)"] += c
+        else:             buckets["Evening (6PM–12AM)"] += c
+    M["buckets"] = buckets
+
+    # ── খ: Counterparty / Network ──
+    recv = defaultdict(lambda: {"amt": 0.0, "cnt": 0})
+    sent = defaultdict(lambda: {"amt": 0.0, "cnt": 0})
+    freq = Counter()
+    cp_svc = defaultdict(Counter)   # counterparty → কোন সার্ভিস/ব্যাংকের মাধ্যমে (bKash/Nagad/Rocket/ব্যাংক)
+    cp_svc_in  = defaultdict(lambda: defaultdict(float))   # cp → {service: IN amount}
+    cp_svc_out = defaultdict(lambda: defaultdict(float))   # cp → {service: OUT amount}
+    for s in txns:
+        _a = s.get("acct", {}) or {}
+        cp = str(_a.get("other_number", "") or "")
+        # কাউন্টারপার্টি নেটওয়ার্কে শুধু মোবাইল নম্বর — বিল (DPDC), মার্চেন্ট/অপারেটর (GP, Banglalink ইত্যাদি)
+        # এবং সাবজেক্টের নিজের নম্বর বাদ
+        if not re.match(r'^01\d{9}$', cp): continue
+        if own and cp == own: continue
+        if _a.get("biller") or _a.get("merchant"): continue
+        _svc = ((s.get("acct", {}) or {}).get("service", "") or str(s.get("sender", "")).strip() or "Unknown")
+        cp_svc[cp][_svc] += 1
+        eff = _im_eff_dir(s); amt = s["amount"]; freq[cp] += 1
+        if eff == "IN":
+            recv[cp]["amt"] += amt; recv[cp]["cnt"] += 1; cp_svc_in[cp][_svc] += amt
+        elif eff == "OUT":
+            sent[cp]["amt"] += amt; sent[cp]["cnt"] += 1; cp_svc_out[cp][_svc] += amt
+    M["top_recv"]  = sorted(recv.items(), key=lambda x: -x[1]["amt"])[:10]
+    M["top_sent"]  = sorted(sent.items(), key=lambda x: -x[1]["amt"])[:10]
+    M["high_freq"] = [(n, c) for n, c in freq.most_common(10) if c >= 3]
+    # প্রতি নম্বরের সার্ভিস লেবেল — বেশি ব্যবহৃতটা আগে (যেমন "bKash", "bKash, Nagad", "AB Bank")
+    M["cp_svc"] = {cp: ", ".join(k for k, _ in c.most_common()) for cp, c in cp_svc.items()}
+    M["cp_svc_in"]  = {cp: dict(d) for cp, d in cp_svc_in.items()}
+    M["cp_svc_out"] = {cp: dict(d) for cp, d in cp_svc_out.items()}
+
+    # ── গ: Behavioral flags ──
+    # structuring: threshold-এর ঠিক নিচে বারবার (9k–10k, 19k–20k, 49k–50k, 99k–100k)
+    bands = [(9000, 10000), (19000, 20000), (49000, 50000), (99000, 100000)]
+    M["structuring"] = sorted(
+        [s for s in txns if any(lo <= s["amount"] < hi for lo, hi in bands)],
+        key=lambda s: -s["amount"])
+    # rapid in-out: IN তারপর ≤60min-এ OUT, পরিমাণ ±25%
+    # প্রতিটি কেসে উৎস (কোথা থেকে), কোন মাধ্যমে/একাউন্টে ঢুকল, কোন মাধ্যম/একাউন্ট থেকে বের হলো,
+    # এবং গন্তব্য (কোথায় গেল) — সব রাখা হয়।
+    seq = sorted([(_im_parse_dt(s.get("date", "")), s) for s in txns
+                  if _im_parse_dt(s.get("date", ""))], key=lambda x: x[0])
+    rapid = []
+    for i in range(len(seq) - 1):
+        d1, s1 = seq[i]
+        if _im_eff_dir(s1) != "IN" or s1["amount"] <= 0: continue
+        for j in range(i + 1, min(i + 6, len(seq))):
+            d2, s2 = seq[j]
+            if (d2 - d1).total_seconds() > 3600: break
+            if _im_eff_dir(s2) == "OUT" and abs(s2["amount"] - s1["amount"]) / s1["amount"] <= 0.25:
+                a1 = s1.get("acct", {}) or {}; a2 = s2.get("acct", {}) or {}
+                rec = {
+                    "in_dt": d1, "in_amt": s1["amount"],
+                    "in_from": _im_party(s1, "IN"),
+                    "in_svc": a1.get("service", "") or str(s1.get("sender", "")),
+                    "in_acct": _im_acct_lbl(a1),
+                    "out_dt": d2, "out_amt": s2["amount"],
+                    "out_svc": a2.get("service", "") or str(s2.get("sender", "")),
+                    "out_acct": _im_acct_lbl(a2),
+                    "out_to": _im_party(s2, "OUT"),
+                    "cp": a2.get("other_number", ""),
+                }
+                # একই টাকা নিজের দুই একাউন্টের মধ্যে (সমান অঙ্ক, ভিন্ন একাউন্ট/সার্ভিস,
+                # কোনো বাইরের নম্বর নেই) → own-account transfer হওয়ার সম্ভাবনা
+                _same_amt = abs(s1["amount"] - s2["amount"]) < 1
+                _diff_acct = (rec["in_svc"], rec["in_acct"]) != (rec["out_svc"], rec["out_acct"])
+                _no_ext = not a1.get("other_number") and not a2.get("other_number")
+                _xref = bool(re.search(re.escape(str(rec["out_svc"]).split()[0]), s1.get("body", ""), re.I)) \
+                        if rec["out_svc"] else False
+                if _same_amt and _diff_acct and _no_ext and ((d2 - d1).total_seconds() <= 1800 or _xref):
+                    rec["note"] = "own"
+                    # নিজের একাউন্টের মধ্যে — গন্তব্য = যে একাউন্টে ঢুকেছে
+                    _own_in = f'{rec["in_svc"]} {rec["in_acct"]}'.strip()
+                    rec["out_to"] = f'Own {_own_in} (same money)'
+                else:
+                    rec["note"] = "pass"
+                rapid.append(rec); break
+    M["rapid"] = rapid
+    # unusual volume: median-এর 2x-এর বেশি মোট ভলিউম যেসব counterparty-র
+    allcp = defaultdict(float)
+    for cp, d in list(recv.items()) + list(sent.items()): allcp[cp] += d["amt"]
+    if allcp:
+        vals = sorted(allcp.values()); med = vals[len(vals) // 2]
+        M["high_vol"] = [(cp, v, freq.get(cp, 0)) for cp, v in
+                         sorted(allcp.items(), key=lambda x: -x[1])
+                         if v > max(med * 2, 50000)][:8]
+    else:
+        M["high_vol"] = []
+    return M
+
+def build_intel_html(M):
+    """Intelligence metrics → HTML সেকশন (dark theme, existing style অনুসরণ করে)।"""
+    MONTH_SHORT = {"01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"May","06":"Jun",
+                   "07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov","12":"Dec"}
+    def mlabel(m):
+        try: y, mo = m.split("-"); return f"{MONTH_SHORT.get(mo, mo)} {y[2:]}"
+        except: return m
+    H = ['<div class="im-wrap">']
+
+    # ── ক: Timeline ──
+    H.append('<div class="im-sec"><div class="im-head">📅 Activity Timeline & Time Pattern</div>')
+    if M["first_dt"] and M["last_dt"]:
+        H.append('<div class="im-period">'
+                 f'<div class="im-pd"><span>First Transaction</span><b>{M["first_dt"].strftime("%d %b %Y, %I:%M %p")}</b></div>'
+                 f'<div class="im-pd"><span>Last Transaction</span><b>{M["last_dt"].strftime("%d %b %Y, %I:%M %p")}</b></div>'
+                 f'<div class="im-pd"><span>Active Span</span><b>{M["active_days"]} days</b></div>'
+                 '</div>')
+    # monthly credit/debit bars
+    mon = M["monthly"]
+    if mon:
+        mx = max((max(d["in"], d["out"]) for d in mon.values()), default=1) or 1
+        H.append('<div class="im-mtitle">Monthly Credit (IN) vs Debit (OUT)</div><div class="im-months">')
+        for m, d in mon.items():
+            ih = d["in"] / mx * 100; oh = d["out"] / mx * 100
+            H.append(
+                '<div class="im-mcol">'
+                f'<div class="im-bars"><div class="im-bin" style="height:{ih:.0f}%" title="IN ৳{d["in"]:,.0f}"></div>'
+                f'<div class="im-bout" style="height:{oh:.0f}%" title="OUT ৳{d["out"]:,.0f}"></div></div>'
+                f'<div class="im-mlbl">{mlabel(m)}</div><div class="im-mcnt">{d["cnt"]}</div>'
+                '</div>')
+        H.append('</div><div class="im-leg"><span class="im-dot-in"></span>Credit (IN)'
+                 '<span class="im-dot-out"></span>Debit (OUT)<span class="im-leg-n">number = txn count</span></div>')
+        H.append('<table class="im-tbl im-mtbl"><tr><th>Month</th><th>Credit IN (৳)</th><th>Debit OUT (৳)</th>'
+                 '<th>Net (৳)</th><th>Txns</th></tr>')
+        for m, d in mon.items():
+            _n = d["in"] - d["out"]
+            H.append(f'<tr><td>{mlabel(m)}</td><td style="color:#16a34a;font-weight:700">৳{d["in"]:,.0f}</td>'
+                     f'<td style="color:#dc2626;font-weight:700">৳{d["out"]:,.0f}</td>'
+                     f'<td style="font-weight:700">{"+" if _n >= 0 else "−"}৳{abs(_n):,.0f}</td><td>{d["cnt"]}</td></tr>')
+        H.append('</table>')
+    # day-part
+    b = M["buckets"]; tb = sum(b.values()) or 1
+    H.append('<div class="im-mtitle">Time-of-Day Activity</div><div class="im-buckets">')
+    for lbl, c in b.items():
+        hot = 'im-bk-night' if lbl.startswith('Night') and c > 0 else ''
+        H.append(f'<div class="im-bk {hot}"><div class="im-bk-n">{c}</div>'
+                 f'<div class="im-bk-l">{lbl}</div><div class="im-bk-p">{c/tb*100:.0f}%</div></div>')
+    H.append('</div>')
+    if M["night_cnt"]:
+        H.append(f'<div class="im-flag im-flag-amber">🌙 {M["night_cnt"]} late-night transaction(s) '
+                 f'(12AM–6AM) totaling ৳{M["night_total"]:,.0f} — worth review.</div>')
+    H.append('</div>')  # end timeline sec
+
+    # ── খ: Counterparty ──
+    _CPS = M.get("cp_svc", {}) or {}
+    def _svc_badge(n):
+        sv = _CPS.get(n, "")
+        if not sv: return '<span class="im-svc im-svc-x">—</span>'
+        out = []
+        for one in sv.split(", "):
+            ol = one.lower()
+            cls = ("bk" if "bkash" in ol else "ng" if "nagad" in ol else
+                   "rk" if ("rocket" in ol or "dbbl" in ol or "dutch" in ol) else
+                   "up" if "upay" in ol else "bn")
+            out.append(f'<span class="im-svc im-svc-{cls}">{hl.escape(one)}</span>')
+        return ' '.join(out)
+    def _svc_cls(one):
+        ol = one.lower()
+        return ("bk" if "bkash" in ol else "ng" if "nagad" in ol else
+                "rk" if ("rocket" in ol or "dbbl" in ol or "dutch" in ol) else
+                "up" if "upay" in ol else "bn")
+    def _svc_amt_badges(n, amap):
+        """একাধিক মাধ্যম থাকলে প্রতিটির অঙ্ক — যেমন "bKash ৳80,000 · Nagad ৳44,430"।"""
+        d = (amap or {}).get(n, {})
+        d = {k: v for k, v in d.items() if v > 0}
+        if len(d) <= 1:
+            return _svc_badge(n) if not d else \
+                   f'<span class="im-svc im-svc-{_svc_cls(next(iter(d)))}">{hl.escape(next(iter(d)))}</span>'
+        return '<br>'.join(
+            f'<span class="im-svc im-svc-{_svc_cls(k)}">{hl.escape(k)}</span>'
+            f'<span class="im-svc-amt">৳{v:,.0f}</span>'
+            for k, v in sorted(d.items(), key=lambda x: -x[1]))
+    def _svc_plain(svc):
+        return f'<span class="im-svc im-svc-{_svc_cls(svc)}">{hl.escape(svc)}</span>' if svc else '—'
+    H.append('<div class="im-sec"><div class="im-head">🔗 Top Counterparties (Network)</div>')
+    def cp_table(title, rows, color, amap):
+        if not rows:
+            return (f'<div class="im-ctitle">{title}</div>'
+                    '<div class="im-noflag">No transfers to/from individual mobile numbers found in the SMS '
+                    '(bill & merchant payments are excluded). If money left an account without SMS, see '
+                    '⚖️ Balance Reconciliation above.</div>')
+        t = [f'<div class="im-ctitle">{title}</div><table class="im-tbl">'
+             '<tr><th>#</th><th>Number</th><th>Via (Service) — breakdown</th><th>Total (৳)</th><th>Txns</th></tr>']
+        for i, (n, d) in enumerate(rows, 1):
+            t.append(f'<tr><td>{i}</td><td class="im-num">{n}</td><td>{_svc_amt_badges(n, amap)}</td>'
+                     f'<td style="color:{color};font-weight:700">৳{d["amt"]:,.0f}</td><td>{d["cnt"]}</td></tr>')
+        t.append('</table>')
+        return ''.join(t)
+    H.append('<div class="im-cwrap">')
+    H.append(cp_table("💰 Top Received-From", M["top_recv"], "#16a34a", M.get("cp_svc_in", {})))
+    H.append(cp_table("💸 Top Sent-To", M["top_sent"], "#dc2626", M.get("cp_svc_out", {})))
+    H.append('</div>')
+    if M["high_freq"]:
+        H.append('<div class="im-ctitle">🔁 High-Frequency Contacts (≥3 txns)</div><div class="im-chips">')
+        for n, c in M["high_freq"]:
+            H.append(f'<div class="im-chip"><b>{n}</b>{_svc_badge(n)}<span>{c}×</span></div>')
+        H.append('</div>')
+    H.append('</div>')  # end counterparty sec
+
+    # ── গ: Behavioral flags ──
+    has_flags = M["structuring"] or M["rapid"] or M["high_vol"]
+    H.append('<div class="im-sec"><div class="im-head">🚩 Behavioral Flags</div>')
+    if not has_flags:
+        H.append('<div class="im-noflag">✓ No structuring, rapid in-out, or unusual-volume patterns detected.</div>')
+    # structuring
+    if M["structuring"]:
+        H.append(f'<div class="im-flag im-flag-red">⚠ <b>Structuring suspicion:</b> {len(M["structuring"])} '
+                 'transaction(s) just below round thresholds (e.g. 9,000–10,000 / 49,000–50,000) — '
+                 'a pattern associated with reporting-limit avoidance.</div>')
+        H.append('<table class="im-tbl im-tbl-flag"><tr><th>Date</th><th>Amount (৳)</th><th>Direction</th></tr>')
+        for s in M["structuring"][:12]:
+            eff = _im_eff_dir(s); dlbl = 'IN' if eff == 'IN' else ('OUT' if eff == 'OUT' else '—')
+            H.append(f'<tr><td>{str(s.get("date",""))[:16]}</td>'
+                     f'<td style="font-weight:700">৳{s["amount"]:,.0f}</td><td>{dlbl}</td></tr>')
+        H.append('</table>')
+    # rapid in-out
+    if M["rapid"]:
+        _n_own = sum(1 for r in M["rapid"] if r.get("note") == "own")
+        _n_pass = len(M["rapid"]) - _n_own
+        H.append(f'<div class="im-flag im-flag-amber">⚡ <b>Rapid in-out:</b> {len(M["rapid"])} case(s) where '
+                 'money was received then sent out within 60 minutes at a similar amount. '
+                 f'<b>{_n_pass}</b> look like pass-through / layering; <b>{_n_own}</b> look like the same money '
+                 'moving between the subject\'s own accounts (shown on both sides) — verify before concluding.</div>')
+        H.append('<div class="im-scroll"><table class="im-tbl im-tbl-flag im-rapid">'
+                 '<tr><th>IN time</th><th>IN ৳</th><th>Source (from)</th><th>Received into</th>'
+                 '<th>OUT time</th><th>OUT ৳</th><th>Paid out from</th><th>Destination (to)</th><th>Note</th></tr>')
+        for r in M["rapid"][:12]:
+            gap = int((r["out_dt"] - r["in_dt"]).total_seconds() // 60)
+            _into = _svc_plain(r["in_svc"]) + (f'<div class="im-acct">{hl.escape(r["in_acct"])}</div>' if r["in_acct"] else '')
+            _outf = _svc_plain(r["out_svc"]) + (f'<div class="im-acct">{hl.escape(r["out_acct"])}</div>' if r["out_acct"] else '')
+            _note = ('<span class="im-note-own">🔁 Own-account transfer (likely)</span>' if r["note"] == "own"
+                     else '<span class="im-note-pass">⚡ Pass-through</span>')
+            H.append(f'<tr><td>{r["in_dt"].strftime("%d %b %y %H:%M")}</td>'
+                     f'<td style="color:#16a34a;font-weight:700">৳{r["in_amt"]:,.0f}</td>'
+                     f'<td>{hl.escape(r["in_from"])}</td><td>{_into}</td>'
+                     f'<td>{r["out_dt"].strftime("%H:%M")} <span class="im-gap">(+{gap}m)</span></td>'
+                     f'<td style="color:#dc2626;font-weight:700">৳{r["out_amt"]:,.0f}</td>'
+                     f'<td>{_outf}</td><td>{hl.escape(r["out_to"])}</td><td>{_note}</td></tr>')
+        H.append('</table></div>')
+    # high volume
+    if M["high_vol"]:
+        H.append('<div class="im-ctitle">📊 Unusually High-Volume Counterparties</div>'
+                 '<table class="im-tbl"><tr><th>#</th><th>Number</th><th>Via (Service)</th><th>Total Volume (৳)</th><th>Txns</th></tr>')
+        for i, (cp, v, c) in enumerate(M["high_vol"], 1):
+            _comb = {}
+            for _m in (M.get("cp_svc_in", {}), M.get("cp_svc_out", {})):
+                for k, v2 in (_m.get(cp, {}) or {}).items(): _comb[k] = _comb.get(k, 0) + v2
+            H.append(f'<tr><td>{i}</td><td class="im-num">{cp}</td><td>{_svc_amt_badges(cp, {cp: _comb})}</td>'
+                     f'<td style="font-weight:700">৳{v:,.0f}</td><td>{c}</td></tr>')
+        H.append('</table>')
+    H.append('</div>')  # end flags sec
+
+    H.append('</div>')  # end im-wrap
+    return ''.join(H)
+
+IM_CSS = """
+.im-wrap{margin:18px 0}
+.im-bottom{max-width:1400px;margin:28px auto 40px;padding:0 20px;border-top:3px solid #e2e8f0;padding-top:18px}
+.im-bottom-title{font-size:17px;font-weight:800;color:#0f172a;margin-bottom:6px}
+.im-bottom-hint{font-size:11.5px;color:#475569;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:8px;padding:6px 10px;margin:4px 0 6px}
+.deleted{display:none!important}
+.dz-target{position:relative}
+.dz-del{background:#fff;border:1px solid #fecaca;color:#dc2626;border-radius:6px;font-size:11px;line-height:1;padding:3px 5px;cursor:pointer;opacity:.55;transition:opacity .15s}
+.dz-del:hover{opacity:1;background:#fef2f2}
+.im-head > .dz-del,.im-ctitle > .dz-del{float:right;margin-left:8px}
+.pc-item > .dz-del,.im-flag > .dz-del,.im-noflag > .dz-del,.im-chip > .dz-del,.im-pd > .dz-del,.im-bk > .dz-del{position:absolute;top:4px;right:4px}
+.dz-td,.dz-th{width:28px;text-align:center;padding:2px!important;background:transparent!important}
+.im-note{font-size:11.5px;color:#64748b;margin:0 0 10px;line-height:1.5}
+.pc-cat{margin-bottom:12px}
+.pc-n{color:#94a3b8;font-weight:600}
+.pc-item{border:1px solid #e8eaed;border-left:3px solid #6366f1;border-radius:8px;padding:8px 34px 8px 10px;margin:6px 0;background:#fafbff}
+.pc-top{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}
+.pc-lbl{font-weight:800;color:#1e293b;font-size:12.5px}
+.pc-meta{font-size:11px;color:#64748b;font-family:monospace}
+.pc-det{font-size:11.5px;color:#334155;margin-top:3px}
+.pc-src{font-size:11px;color:#475569;background:#f1f5f9;border-radius:6px;padding:5px 7px;margin-top:5px;white-space:pre-wrap;word-break:break-word}
+.pc-snd{font-weight:700;color:#334155}
+.rc-tbl td{vertical-align:top}
+.rc-body{font-size:10.5px;color:#475569;max-width:420px;white-space:pre-wrap;word-break:break-word}
+.rc-ok{color:#047857;font-weight:700;white-space:nowrap}
+.rc-bad{color:#dc2626;font-weight:700;white-space:nowrap}
+.rc-warn{color:#b45309;font-weight:700;white-space:nowrap}
+.im-mtbl{margin-top:10px}
+@media print{.dz-del,.dz-td,.dz-th,.im-bottom-hint{display:none!important}.deleted{display:none!important}.pc-item{padding-right:10px}}
+.im-svc{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin:1px 2px 1px 0;white-space:nowrap;border:1px solid}
+.im-svc-bk{background:#fdf2f8;color:#be185d;border-color:#f9a8d4}
+.im-svc-ng{background:#fff7ed;color:#c2410c;border-color:#fdba74}
+.im-svc-rk{background:#f5f3ff;color:#6d28d9;border-color:#c4b5fd}
+.im-svc-up{background:#ecfeff;color:#0e7490;border-color:#67e8f9}
+.im-svc-bn{background:#eff6ff;color:#1d4ed8;border-color:#93c5fd}
+.im-svc-x{background:#f8fafc;color:#94a3b8;border-color:#e2e8f0}
+.im-svc-amt{font-family:monospace;font-size:11px;font-weight:700;color:#334155;margin-left:3px}
+.im-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.im-rapid td{vertical-align:top;font-size:11.5px}
+.im-acct{font-family:monospace;font-size:10.5px;color:#475569;margin-top:2px}
+.im-gap{color:#94a3b8;font-size:10.5px}
+.im-note-own{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.im-note-pass{background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.im-sec{background:#fff;border:1px solid #e8eaed;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.im-head{font-size:15px;font-weight:800;color:#1e293b;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #f1f5f9}
+.im-period{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.im-pd{background:#f8fafc;border:1px solid #e8eaed;border-radius:9px;padding:10px 12px;text-align:center}
+.im-pd span{display:block;font-size:11px;color:#64748b;margin-bottom:3px}
+.im-pd b{font-size:13.5px;color:#0f172a}
+.im-mtitle{font-size:12.5px;font-weight:700;color:#475569;margin:14px 0 8px}
+.im-months{display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding:6px 0 2px;min-height:130px}
+.im-mcol{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:44px}
+.im-bars{display:flex;gap:2px;align-items:flex-end;height:100px}
+.im-bin{width:10px;background:linear-gradient(180deg,#22c55e,#16a34a);border-radius:3px 3px 0 0;min-height:2px}
+.im-bout{width:10px;background:linear-gradient(180deg,#ef4444,#dc2626);border-radius:3px 3px 0 0;min-height:2px}
+.im-mlbl{font-size:10px;color:#475569;white-space:nowrap}
+.im-mcnt{font-size:10px;color:#94a3b8;font-weight:700}
+.im-leg{display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;margin-top:8px;flex-wrap:wrap}
+.im-dot-in,.im-dot-out{width:10px;height:10px;border-radius:3px;display:inline-block}
+.im-dot-in{background:#16a34a}.im-dot-out{background:#dc2626;margin-left:10px}
+.im-leg-n{margin-left:auto;font-style:italic}
+.im-buckets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.im-bk{background:#f8fafc;border:1px solid #e8eaed;border-radius:9px;padding:11px;text-align:center}
+.im-bk-night{background:rgba(220,38,38,.07);border-color:rgba(220,38,38,.3)}
+.im-bk-n{font-size:20px;font-weight:800;color:#1e293b}
+.im-bk-l{font-size:10px;color:#64748b;margin:3px 0}
+.im-bk-p{font-size:11px;color:#94a3b8;font-weight:700}
+.im-cwrap{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.im-ctitle{font-size:12.5px;font-weight:700;color:#475569;margin:12px 0 6px}
+.im-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.im-tbl th{background:#f1f5f9;color:#475569;text-align:left;padding:6px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}
+.im-tbl td{padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#334155}
+.im-num{font-family:monospace;font-size:11.5px}
+.im-chips{display:flex;flex-wrap:wrap;gap:8px}
+.im-chip{background:#eff6ff;border:1px solid #bfdbfe;border-radius:20px;padding:5px 12px;font-size:12px;color:#1e40af}
+.im-chip b{font-family:monospace}.im-chip span{color:#3b82f6;margin-left:5px;font-weight:700}
+.im-flag{border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.5;margin:10px 0}
+.im-flag-red{background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.35);color:#991b1b}
+.im-flag-amber{background:rgba(217,119,6,.09);border:1px solid rgba(217,119,6,.35);color:#92400e}
+.im-tbl-flag{margin-top:4px}
+.im-noflag{background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.3);border-radius:9px;padding:11px 13px;font-size:12.5px;color:#15803d}
+@media (max-width:640px){.im-period,.im-buckets{grid-template-columns:1fr 1fr}.im-cwrap{grid-template-columns:1fr}}
+@media print{.im-sec{break-inside:avoid}}
+"""
+
+
 def generate_html(sms_list, stats, out_path, tn=""):
     now = datetime.now().strftime("%d %B %Y, %I:%M %p")
 
-    # bank_info — sidebar summary-র জন্য, card-এ দেখাবে না
-    # display_list-এ শুধু 10K+ transaction এবং অন্য categories (personal, travel ইত্যাদি)
+    # effective direction (IN/OUT) — body-detected credited/debited সবচেয়ে নির্ভরযোগ্য
+    def _eff_dir_of(s):
+        ai = s.get("acct", {}) or {}
+        _st = s.get("sender_type", ""); _ad = ai.get("direction", ""); _dir = s.get("direction", "")
+        # mfs/bank: শুধু body-detected direction নির্ভরযোগ্য। SMSMT/SMSMO সব notification-এই
+        # আসে, তাই তা দিয়ে IN/OUT ঠিক করা যাবে না — direction খালি হলে গোনা হবে না।
+        if _st in ("mfs","bank"):
+            if _ad == "Received": return "IN"
+            if _ad == "Sent":     return "OUT"
+            return ""
+        if _dir == "SMSMT": return "IN"
+        if _dir == "SMSMO": return "OUT"
+        if _ad == "Received": return "IN"
+        if _ad == "Sent": return "OUT"
+        return ""
+
+    # ── Credit/Debit টোটাল: সব BDT লেনদেন থেকে (10K-এর নিচেরগুলোসহ) ──────────────
+    # চার্ট ও সাইডবার সব transaction নিয়ে হিসাব করে; শুধু card-এ দেখানোর ক্ষেত্রে threshold।
+    # পাশাপাশি 10K+ card-worthy txn গুনি — display floor নির্ধারণে কাজে লাগে।
+    _credit_total = 0.0; _debit_total = 0.0
+    _credit_cnt = 0; _debit_cnt = 0
+    _above10k = 0
+    for s in sms_list:
+        amt = s.get("amount", 0) or 0
+        if amt <= 0: continue
+        if "travel_txn" in s.get("categories", []): continue   # বিদেশি মুদ্রা → BDT চার্টে নয়
+        eff = _eff_dir_of(s)
+        if eff == "IN":  _credit_total += amt; _credit_cnt += 1
+        elif eff == "OUT": _debit_total += amt; _debit_cnt += 1
+        if amt >= TIER_SMALL and s.get("sender_type") in ("mfs","bank"):
+            _above10k += 1
+    _cd_grand = _credit_total + _debit_total
+    _cr_pct = (_credit_total / _cd_grand * 100) if _cd_grand else 0
+    _db_pct = (_debit_total / _cd_grand * 100) if _cd_grand else 0
+    _net_flow = _credit_total - _debit_total
+
+    # ── Dynamic display floor (message/card দেখানোর threshold) ──
+    # 10K+ লেনদেন 5টির বেশি থাকলে শুধু 10K+ card; নইলে 5K+ card-ও দেখাই।
+    _disp_floor = TIER_SMALL if _above10k > 5 else 5000
+
+    # display_list: card-worthy txn (>= _disp_floor) + non-txn categories (personal, travel…)
     # foreign_bank SMS → সর্বোচ্চ 20টি card, বাকিগুলো summary block-এ
-    _non_ftxn = [s for s in sms_list
-                 if "bank_info" not in s.get("categories",[])
-                 and "travel_txn" not in s.get("categories",[])
-                 and not (s.get("categories") == [f"txn_{s.get('tier','')}"]
-                          and s.get("tier","") == "")]
+    def _show_in_cards(s):
+        cats = s.get("categories", [])
+        if "travel_txn" in cats: return False
+        if "bank_info" in cats:                       # 10K-এর নিচের mfs/bank txn
+            return (s.get("amount", 0) or 0) >= _disp_floor
+        if cats == [f"txn_{s.get('tier','')}"] and s.get("tier","") == "":
+            return False
+        return True
+    _non_ftxn = [s for s in sms_list if _show_in_cards(s)]
     _ftxn_all  = [s for s in sms_list if "travel_txn" in s.get("categories",[])]
     _ftxn_show = _ftxn_all[:20]
     _ftxn_hidden = _ftxn_all[20:]
@@ -1671,6 +2403,18 @@ def generate_html(sms_list, stats, out_path, tn=""):
             _ftxn_by_ccy[ccy]["max"] = amt
 
     display_list = _non_ftxn + _ftxn_show
+
+    # Intelligence metrics: timeline, counterparty, behavioral flags।
+    # পূর্ণ BDT লেনদেন সেটে চালাই (ছোট bank_info txn সহ, বিদেশি মুদ্রা বাদে) —
+    # structuring/night/rapid বিশ্লেষণে সব লেনদেন লাগে, শুধু কার্ড-দেখানো গুলো নয়।
+    _intel_src = [s for s in sms_list
+                  if (s.get("amount", 0) or 0) > 0
+                  and "travel_txn" not in s.get("categories", [])]
+    _own_num = (stats or {}).get("own_number", "") or (("0" + re.sub(r'^\+?880', '', re.sub(r'\D', '', tn))[-10:]) if tn else "")
+    _intel = compute_intel_metrics(_intel_src, own=_own_num)
+    _intel_html = build_intel_html(_intel)
+    _profile_html = build_profile_html((stats or {}).get("profile") or {})
+    _recon_html = build_recon_html((stats or {}).get("recon") or [])
 
     months    = sorted({s["month"] for s in display_list if s["month"]})
     mnt_cnt   = Counter(s["month"] for s in display_list)
@@ -1695,6 +2439,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
     def cat_tags(cats):
         o=""
         for c in cats:
+            if c == "bank_info": continue   # internal marker — tag হিসেবে দেখাব না
             m=CAT_META.get(c,{}); col=m.get("color","#555")
             lbl=CAT_EN.get(c,m.get("label",c))
             o+=(f'<span class="ctag" style="background:{col}12;border:1px solid {col}35;color:{col}">'
@@ -1709,7 +2454,7 @@ def generate_html(sms_list, stats, out_path, tn=""):
             for v in [f'{amt:,.2f}', f'{amt:.2f}']:
                 try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
                 except (ValueError, TypeError): pass
-        elif amt>=TIER_SMALL:
+        elif amt>=_disp_floor:
             for v in [f'{int(amt):,}', str(int(amt)), f'{amt:,.2f}']:
                 try: r=re.sub(re.escape(v),f'<mark>{v}</mark>',r,count=1,flags=re.I)
                 except: pass
@@ -1725,8 +2470,8 @@ def generate_html(sms_list, stats, out_path, tn=""):
         if _s_type == "foreign_bank" and s["amount"] > 0:
             amt_tag = f'<span class="amt-tag" style="background:#0f766e">💳 {_ccy} {s["amount"]:,.2f}</span>'
         else:
-            amt_tag=(f'<span class="amt-tag" style="background:{bdr}">💰 Tk {s["amount"]:,.2f}</span>'
-                     if s["amount"]>=TIER_SMALL else "")
+            amt_tag=(f'<span class="amt-tag" style="background:{bdr if t else "#64748b"}">💰 Tk {s["amount"]:,.2f}</span>'
+                     if s["amount"]>=_disp_floor else "")
         tier_badge=(f'<span class="rbadge" style="background:{bdr}">{TIER_EN_LBL.get(t,"")}</span>' if t else "")
         # MFS/Bank SMS: body-detected direction সবচেয়ে নির্ভরযোগ্য (SMSMT সব notification-এই আসে)
         _acct_dir = ai.get("direction","") if ai else ""
@@ -1817,20 +2562,28 @@ def generate_html(sms_list, stats, out_path, tn=""):
         is_multi    = d.get("multi_account", False)
         accs        = d.get("accounts", {})
 
-        # Single account: last balance দেখাও
-        # Multi account: প্রতিটির balance আলাদা দেখাও
-        if is_multi and accs:
+        # একাধিক account/card থাকলে — প্রতিটি আলাদা (card vs account), txn ও in/out সহ।
+        # একটিমাত্র হলেও যদি কার্ড হয়, breakdown দেখাই (কার্ড আলাদা করে বোঝা জরুরি)।
+        _show_breakdown = (len(accs) > 1) or any(a.get("type") == "card" for a in accs.values())
+        if _show_breakdown and accs:
             acc_rows = ""
-            for acc_no, av in sorted(accs.items()):
-                if av["balance"] > 0:
-                    acc_rows += (f'<div class="acc-row">'
-                                 f'<span class="acc-no">AC {esc(acc_no)}</span>'
-                                 f'<span class="acc-bal">BDT {av["balance"]:,.2f}</span>'
-                                 f'</div>')
-            bal_html = (f'<div class="ag-bal-multi">'
-                        f'<div class="ag-bal-hdr">💰 Account Balances</div>'
-                        f'{acc_rows}'
-                        f'</div>') if acc_rows else ""
+            for _canon, av in sorted(accs.items(), key=lambda x: -x[1]["txn_count"]):
+                _is_card = av.get("type") == "card"
+                _icon = "💳" if _is_card else "🏦"
+                _tlbl = "Card" if _is_card else "A/C"
+                _disp = esc(av.get("display", _canon))
+                _bits = f'<span class="acc-cnt">{av["txn_count"]} txn</span>'
+                if av.get("in", 0) > 0:  _bits += f'<span class="acc-in">IN ৳{av["in"]:,.0f}</span>'
+                if av.get("out", 0) > 0: _bits += f'<span class="acc-out">OUT ৳{av["out"]:,.0f}</span>'
+                _balp = f'<span class="acc-bal">Bal ৳{av["balance"]:,.0f}</span>' if av.get("balance", 0) > 0 else ""
+                acc_rows += (f'<div class="acc-row2">'
+                             f'<div class="acc-id"><span class="acc-ic {"card" if _is_card else "reg"}">{_icon} {_tlbl}</span> '
+                             f'<code>{_disp}</code></div>'
+                             f'<div class="acc-meta">{_bits}{_balp}</div>'
+                             f'</div>')
+            bal_html = (f'<div class="ag-accts">'
+                        f'<div class="ag-accts-hdr">🗂️ Accounts / Cards ({len(accs)})</div>'
+                        f'{acc_rows}</div>')
         else:
             bal_html = (f'<div class="ag-bal">💰 Last Balance: Tk {display_bal:,.2f}</div>'
                         if display_bal else "")
@@ -1867,6 +2620,37 @@ def generate_html(sms_list, stats, out_path, tn=""):
         for m in months)
     tnb=f'<div class="tnbadge">📱 {esc(tn)}</div>' if tn else ""
 
+    _dz_js = '''
+// ── নিচের Intelligence অংশ: প্রতিটি সেকশন/সারি/আইটেমে ডিলিট বাটন ──────────────
+(function(){
+  const root=document.querySelector('.im-bottom'); if(!root) return;
+  function mkBtn(){const b=document.createElement('button');b.type='button';b.className='dz-del no-print';
+    b.title='Delete';b.textContent='🗑';b.setAttribute('onclick','delEl(this)');return b;}
+  root.querySelectorAll('.im-sec, .pc-cat').forEach(el=>{
+    el.classList.add('dz-target');
+    const h=el.querySelector(':scope > .im-head, :scope > .im-ctitle');
+    if(h && !h.querySelector(':scope > .dz-del')) h.appendChild(mkBtn());
+  });
+  root.querySelectorAll('.pc-item, .im-flag, .im-noflag, .im-chip, .im-pd, .im-bk').forEach(el=>{
+    el.classList.add('dz-target');
+    if(!el.querySelector(':scope > .dz-del')) el.appendChild(mkBtn());
+  });
+  root.querySelectorAll('table.im-tbl').forEach(t=>{
+    t.querySelectorAll('tr').forEach(tr=>{
+      if(tr.querySelector(':scope > .dz-td, :scope > .dz-th')) return;
+      if(tr.querySelector(':scope > th')){const th=document.createElement('th');th.className='dz-th no-print';tr.appendChild(th);}
+      else{tr.classList.add('dz-target');const td=document.createElement('td');td.className='dz-td no-print';td.appendChild(mkBtn());tr.appendChild(td);}
+    });
+  });
+})();
+function delEl(btn){
+  const el=btn.closest('.dz-target'); if(!el) return;
+  el.classList.add('deleted'); _delStack.push(el);
+  document.getElementById('del-cnt').textContent=_delStack.length;
+  _undoBar.classList.add('show'); clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(()=>_undoBar.classList.remove('show'),4000);
+}
+'''
     _word_js = '''
 // ── Word (docx.js) ──────────────────────────────────────────────────────────
 function downloadWord(){
@@ -1879,6 +2663,43 @@ function downloadWord(){
     s.onerror=()=>{ btn.textContent='❌ No Internet'; btn.disabled=false; };
     document.head.appendChild(s);
   } else { _buildWord(btn); }
+}
+
+// ── Word: নিচের Intelligence অংশ (ডিলিট করা অংশ বাদ) ────────────────────────
+function _bottomBlocks(){
+  const {Table,TableRow,TableCell,Paragraph,TextRun,WidthType,ShadingType}=docx;
+  const out=[]; const root=document.querySelector('.im-bottom'); if(!root) return out;
+  const vis=el=>!el.closest('.deleted') && !el.classList.contains('no-print');
+  const txt=el=>(el.innerText||el.textContent||'').replace(/🗑/g,'').replace(/[ \\t]+\\n/g,'\\n').replace(/\\n{2,}/g,'\\n').trim();
+  const P=(t,o)=>new Paragraph({spacing:{after:60},children:t.split('\\n').map((l,i)=>new TextRun(Object.assign({text:l.trim(),size:18,font:'Arial',break:i?1:0},o||{})))});
+  out.push(new Paragraph({spacing:{before:320,after:120},children:[new TextRun({text:'INTELLIGENCE ANALYSIS',bold:true,size:30,color:'1A1A2E',font:'Arial'})]}));
+  function tbl(t){
+    const rows=[...t.querySelectorAll('tr')].filter(vis).map(tr=>{
+      const cells=[...tr.children].filter(c=>!c.classList.contains('no-print'));
+      if(!cells.length) return null;
+      const isH=cells[0].tagName==='TH';
+      return new TableRow({children:cells.map(c=>new TableCell({
+        shading:isH?{type:ShadingType.CLEAR,color:'auto',fill:'E2E8F0'}:undefined,
+        children:[new Paragraph({children:txt(c).split('\\n').map((l,i)=>new TextRun({text:l.trim(),size:16,bold:isH,font:'Arial',break:i?1:0}))})]}))});
+    }).filter(Boolean);
+    if(rows.length>1) out.push(new Table({width:{size:100,type:WidthType.PERCENTAGE},rows}));
+    out.push(new Paragraph({spacing:{after:80}}));
+  }
+  const LEAF=['pc-item','im-flag','im-noflag','im-chip','im-pd','im-bk','im-note'];
+  const SKIP=['im-months','im-leg','im-bars','im-bottom-hint'];
+  function walk(el){
+    if(!vis(el)) return;
+    if(el.tagName==='TABLE'){tbl(el);return;}
+    if(['SCRIPT','STYLE','BUTTON'].includes(el.tagName)) return;
+    if(SKIP.some(c=>el.classList.contains(c))) return;
+    if(el.classList.contains('im-head')){out.push(P(txt(el),{bold:true,size:24,color:'1A1A2E'}));return;}
+    if(el.classList.contains('im-ctitle')||el.classList.contains('im-mtitle')){out.push(P(txt(el),{bold:true,size:20,color:'334155'}));return;}
+    const blocks=[...el.children].filter(c=>!['BR','B','SPAN','CODE','I','STRONG','EM','A','SUP','SUB'].includes(c.tagName));
+    if(!blocks.length || LEAF.some(c=>el.classList.contains(c))){const t=txt(el); if(t) out.push(P(t)); return;}
+    blocks.forEach(walk);
+  }
+  [...root.children].filter(c=>!c.classList.contains('im-bottom-title')).forEach(walk);
+  return out;
 }
 
 function _buildWord(btn){
@@ -2023,6 +2844,7 @@ function _buildWord(btn){
         new Paragraph({spacing:{after:60},children:[new TextRun({text:'Deleted cards excluded. Generated: '+now_str,italics:true,size:18,color:'888888',font:'Arial'})]}),
         new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:sRows}),
         new Paragraph({spacing:{after:60}}),
+        ..._bottomBlocks(),
       ],
     }],
   });
@@ -2078,6 +2900,20 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .ss-box.red{{border-color:rgba(192,57,43,.5);background:rgba(192,57,43,.15)}}
 .ss-box.grn{{border-color:rgba(22,163,74,.5);background:rgba(22,163,74,.1)}}
 .ss-box.blu{{border-color:rgba(37,99,235,.5);background:rgba(37,99,235,.1)}}
+.cd-summary{{margin-top:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px 16px}}
+.cd-head{{font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:12px;letter-spacing:.3px}}
+.cd-stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}}
+.cd-stat{{text-align:center;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.08)}}
+.cd-in{{background:rgba(22,163,74,.14);border-color:rgba(22,163,74,.4)}}
+.cd-out{{background:rgba(220,38,38,.14);border-color:rgba(220,38,38,.4)}}
+.cd-net{{background:rgba(255,255,255,.06)}}
+.cd-amt{{font-size:20px;font-weight:800;line-height:1.1}}
+.cd-in .cd-amt{{color:#86efac}}.cd-out .cd-amt{{color:#fca5a5}}
+.cd-lbl{{font-size:10.5px;color:#94a3b8;margin-top:4px}}
+.cd-bar{{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid rgba(255,255,255,.12)}}
+.cd-bar-in{{background:linear-gradient(90deg,#16a34a,#22c55e);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;min-width:2px}}
+.cd-bar-out{{background:linear-gradient(90deg,#dc2626,#ef4444);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;min-width:2px}}
+@media (max-width:640px){{.cd-stats{{grid-template-columns:1fr}}}}
 .layout{{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 200px)}}
 .sidebar{{background:#fff;border-right:1px solid #e8eaed;padding:16px 14px;
   position:sticky;top:66px;height:calc(100vh - 66px);overflow-y:auto;
@@ -2145,6 +2981,19 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 .acc-row:last-child{{border-bottom:none}}
 .acc-no{{font-family:'JetBrains Mono',monospace;font-size:10px;color:#374151}}
 .acc-bal{{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#15803d}}
+.ag-accts{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px 8px;margin-top:6px}}
+.ag-accts-hdr{{font-size:10px;font-weight:700;color:#334155;margin-bottom:5px}}
+.acc-row2{{padding:4px 0;border-bottom:1px solid #eef2f7}}
+.acc-row2:last-child{{border-bottom:none}}
+.acc-id{{display:flex;align-items:center;gap:5px;margin-bottom:2px}}
+.acc-id code{{font-family:'JetBrains Mono',monospace;font-size:10px;color:#1e293b;font-weight:700}}
+.acc-ic{{font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;white-space:nowrap}}
+.acc-ic.card{{background:#fef3c7;color:#b45309;border:1px solid #fcd34d}}
+.acc-ic.reg{{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}}
+.acc-meta{{display:flex;flex-wrap:wrap;gap:6px;padding-left:2px}}
+.acc-cnt{{font-size:9.5px;color:#64748b;font-weight:600}}
+.acc-in{{font-size:9.5px;color:#16a34a;font-family:'JetBrains Mono',monospace}}
+.acc-out{{font-size:9.5px;color:#dc2626;font-family:'JetBrains Mono',monospace}}
 .ag-cycling{{background:#fefce8;border:1px solid #fde047;border-radius:5px;padding:4px 7px;margin-top:5px;font-size:10px;color:#854d0e}}
 .cyc-note{{color:#a16207;font-style:italic}}
 .ftxn-summary{{background:#f0fdfa;border:1px solid #99f6e4;border-left:4px solid #0f766e;border-radius:10px;padding:14px 18px;margin-bottom:12px}}
@@ -2188,6 +3037,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
   .fbar{{display:none}}.scard{{break-inside:avoid}}
   .del-btn,.undo-bar,.no-print{{display:none!important}}
   .scard.deleted{{display:none!important}}}}
+{IM_CSS}
 </style></head><body>
 
 <div class="topbar">
@@ -2203,7 +3053,7 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
     {tnb}
     <button class="dl-top" onclick="downloadHTML()">⬇️ Download HTML</button>
     <button class="dl-top" onclick="downloadWord()" id="word-btn">📄 Download Word</button>
-    <button class="dl-top" onclick="window.print()" style="margin-left:0">🖨 Print</button>
+    <button class="dl-top" onclick="window.print()" style="margin-left:0">🖨 Print / Save PDF</button>
   </div>
 </div>
 
@@ -2226,6 +3076,27 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
     <div class="ss-box grn"><div class="ss-num" style="color:#86efac">{smsmt_count}</div><div class="ss-lbl">SMSMT (Incoming)</div></div>
     <div class="ss-box blu"><div class="ss-num" style="color:#93c5fd">{smsmo_count}</div><div class="ss-lbl">SMSMO (Outgoing)</div></div>
     <div class="ss-box"><div class="ss-num" style="color:#cbd5e1">{stats["filtered"]}</div><div class="ss-lbl">Operator Filtered</div></div>
+  </div>
+  <div class="cd-summary">
+    <div class="cd-head">💰 Total Credit vs Debit Summary</div>
+    <div class="cd-stats">
+      <div class="cd-stat cd-in">
+        <div class="cd-amt">৳{_credit_total:,.0f}</div>
+        <div class="cd-lbl">Total Credit (IN) · {_credit_cnt} txn</div>
+      </div>
+      <div class="cd-stat cd-out">
+        <div class="cd-amt">৳{_debit_total:,.0f}</div>
+        <div class="cd-lbl">Total Debit (OUT) · {_debit_cnt} txn</div>
+      </div>
+      <div class="cd-stat cd-net">
+        <div class="cd-amt" style="color:{'#86efac' if _net_flow>=0 else '#fca5a5'}">৳{_net_flow:,.0f}</div>
+        <div class="cd-lbl">Net Flow {'(Surplus)' if _net_flow>=0 else '(Deficit)'}</div>
+      </div>
+    </div>
+    <div class="cd-bar">
+      <div class="cd-bar-in" style="width:{_cr_pct:.1f}%" title="Credit {_cr_pct:.1f}%">{(f'{_cr_pct:.0f}% IN' if _cr_pct>=12 else '')}</div>
+      <div class="cd-bar-out" style="width:{_db_pct:.1f}%" title="Debit {_db_pct:.1f}%">{(f'{_db_pct:.0f}% OUT' if _db_pct>=12 else '')}</div>
+    </div>
   </div>
 </div>
 
@@ -2265,9 +3136,17 @@ body{{background:#f4f5f7;color:#1a1a2e;font-family:'Outfit',sans-serif;font-size
 </div>
 </div>
 
+<!-- Intelligence analysis — মেসেজের পরে, একদম নিচে -->
+<div class="im-bottom">
+<div class="im-bottom-title">🧠 Intelligence Analysis — Profile · Reconciliation · Timeline · Counterparties · Flags</div>
+<div class="im-bottom-hint no-print">🗑 Any section, row or item below can be deleted (↩ Undo available). Then use <b>📄 Download Word</b> or <b>🖨 Print / Save PDF</b> — deleted items are left out.</div>
+<div class="im-wrap">{_profile_html}{_recon_html}</div>
+{_intel_html}
+</div>
+
 <!-- Undo bar -->
 <div id="undo-bar" class="undo-bar no-print">
-  <span>🗑 <span id="del-cnt" class="del-count">0</span> card(s) deleted</span>
+  <span>🗑 <span id="del-cnt" class="del-count">0</span> item(s) deleted</span>
   <button class="undo-btn" onclick="undoLast()">↩ Undo</button>
   <button class="undo-btn" style="background:#475569" onclick="clearAll()">✕</button>
 </div>
@@ -2369,15 +3248,462 @@ function delCard(id){{
 }}
 function undoLast(){{
   const id=_delStack.pop();
-  if(id){{ document.getElementById(id)?.classList.remove('deleted'); }}
+  if(typeof id==='string'){{ document.getElementById(id)?.classList.remove('deleted'); }}
+  else if(id){{ id.classList.remove('deleted'); }}
   document.getElementById('del-cnt').textContent=_delStack.length;
   if(!_delStack.length) _undoBar.classList.remove('show');
   apply();
 }}
 function clearAll(){{ _delStack=[]; _undoBar.classList.remove('show'); }}
+{_dz_js}
 </script>
 </body></html>'''
     with open(out_path,'w',encoding='utf-8') as f: f.write(html)
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SUBJECT PROFILE CLUES — চাকরি, বাসস্থান, যানবাহন, ভ্রমণ, চিকিৎসা, নাম, খরচের স্থান
+#  (ফিল্টার হওয়া মেসেজসহ সব মেসেজ থেকে বের করা হয়)
+# ═══════════════════════════════════════════════════════════════════════════
+_PC_CATS = [
+    ("employment", "💼 Employment & Income"),
+    ("residence",  "🏠 Residence, Utility & Property"),
+    ("vehicle",    "🚗 Vehicle"),
+    ("travel",     "✈️ Travel"),
+    ("health",     "🏥 Health / Medical Institutions"),
+    ("names",      "👤 Names Addressed in SMS"),
+    ("spending",   "🛍️ Card Spending Locations"),
+    ("finance",    "🏦 Other Financial Footprint"),
+    ("business",   "📑 Business / Govt Procurement"),
+]
+_PC_VEH_RE = re.compile(
+    r'\b((?:DHAKA|CHATTA|CHATTOGRAM|CHITTAGONG|CTG|KHULNA|RAJSHAHI|SYLHET|BARISHAL|BARISAL|RANGPUR|'
+    r'MYMENSINGH|GAZIPUR|NARAYANGANJ|CUMILLA|COMILLA|BOGURA|BOGRA|JASHORE|JESSORE|NARSINGDI|SAVAR)'
+    r'(?:\s+METRO)?[\s\-]+[A-Z]{1,4}[\s\-]+\d{2}[\s\-]+\d{4})\b')
+_PC_NAME_STOP = {"customer","sir","madam","valued","consumer","user","cardholder","parents","member",
+                 "subscriber","client","guardian","student","patient","all","concern","friend","applicant"}
+_PC_HEALTH_RE = re.compile(r'hospital|diagnostic|clinic|medical|labaid|popular|square\s*hosp|ibn\s*sina|evercare|\bbsh\b|healthcare', re.I)
+_PC_HEALTH_ENGAGE = re.compile(r'registration|uhid|report|thank\s*you\s*for\s*choosing|feedback|appointment|patient|serial|health\s*card|admi(?:t|ssion)|discharge|purchase|bill|lab\b|test', re.I)
+
+def _pc_dt(d):
+    try: return to_dt(d)
+    except Exception: return None
+
+def extract_profile_clues(items):
+    """items: merged SMS list ({sender, body, date, ...}) — ফিল্টার করার আগের।
+    Returns: {cat: [ {label, detail, count, first, last, amount, body, sender}, ... ]}"""
+    agg = {}   # (cat, key) -> dict
+    def add(cat, key, label, detail="", it=None, amount=0.0):
+        k = (cat, key)
+        d = agg.get(k)
+        dt = _pc_dt(it.get("date","")) if it else None
+        if not d:
+            d = agg[k] = {"cat": cat, "label": label, "detail": detail, "count": 0, "first": dt, "last": dt,
+                          "amount": 0.0, "amounts": [], "body": "", "sender": "", "_bodies": set()}
+        d["count"] += 1
+        if cat in ("health", "spending") and len(label) > len(d["label"]): d["label"] = label
+        if amount: d["amount"] += amount; d["amounts"].append(amount)
+        if dt:
+            if not d["first"] or dt < d["first"]: d["first"] = dt
+            if not d["last"] or dt >= d["last"]:
+                d["last"] = dt
+                if it: d["body"] = it.get("body",""); d["sender"] = str(it.get("sender",""))
+        elif it and not d["body"]:
+            d["body"] = it.get("body",""); d["sender"] = str(it.get("sender",""))
+        if detail and detail not in d["detail"]:
+            d["detail"] = (d["detail"] + " · " + detail).strip(" ·") if d["detail"] else detail
+
+    for it in items:
+        b = str(it.get("body","") or ""); snd = str(it.get("sender","") or "")
+        if not b.strip(): continue
+        bl = b.lower()
+
+        # ── Employment / Income ──
+        m = re.search(r'EFT\s+Advice.*?Salary\s+for\s+the\s+month\s+of\s+([A-Za-z]+\s*\d{4}).*?Tk\.?\s*([\d,]+)', b, re.I | re.S)
+        if m:
+            amt = float(m.group(2).replace(",", ""))
+            add("employment", "salary_eft", "Monthly salary received via Govt. EFT (iBAS++)",
+                f"{m.group(1).strip()}: ৳{amt:,.0f}", it, amt)
+        m = re.search(r'salary\s+bill\s+for\s+the\s+month.*?(?:forwarded|sent)\s+(?:by\s+DDO\s+)?to\s+(.+?)\s*-\s*iBas', b, re.I | re.S)
+        if m:
+            off = m.group(1).strip()
+            mm = re.search(r'Ministry\s+of\s+([A-Za-z &]+)|CAFO\s*,?\s*([A-Za-z &]+)', off)
+            if mm:
+                minis = (mm.group(1) or mm.group(2)).strip()
+                minis = re.sub(r'^(?:Ministry\s+of|Office\s+of\s+the)\s+', '', minis, flags=re.I).strip()
+                add("employment", "employer_" + minis.lower(), f"Employer (Govt. salary bill via iBAS++): Ministry of {minis}",
+                    "", it)
+        if re.search(r'health\s*card.*sarkari\s*karmachari', b, re.I):
+            add("employment", "govt_health_card", "Govt. employee health card (Sarkari Karmachari Hospital)", "", it)
+        m = re.search(r'\bsalary\b.*?(?:credited|BDT|Tk)\s*([\d,]+\.?\d*)', b, re.I)
+        if m and not re.search(r'EFT\s+Advice|salary\s+bill|loan|offer|account\s+open', b, re.I) and re.search(r'credited|deposit', b, re.I):
+            try:
+                amt = float(m.group(1).replace(",", ""))
+                add("employment", "salary_credit_" + snd.lower(), f"Salary credited ({snd})", f"৳{amt:,.0f}", it, amt)
+            except ValueError: pass
+
+        # ── Business / Procurement ──
+        m = re.search(r'e-?GP.*?Tender\s*ID\s*[:#]?\s*(\d+)', b, re.I | re.S)
+        if m:
+            add("business", "egp_" + m.group(1), f"e-GP tender ID {m.group(1)}", "", it)
+
+        # ── Vehicle ──
+        for v in set(re.sub(r'\s+', ' ', x).replace(" -", "-").replace("- ", "-") for x in _PC_VEH_RE.findall(b.upper())):
+            ev = ("Tax-Token" if "tax-token" in bl else "Fitness" if "fitness" in bl else
+                  "Trustee board cert." if "trustee" in bl else "BRTA notice")
+            dm = re.search(r'(?:expire[sd]?\s+on|is)\s+(\d{1,2}-[A-Z]{3}-\d{2,4})', b, re.I)
+            add("vehicle", "veh_" + v, f"Vehicle {v}", f"{ev}{(' ' + dm.group(1)) if dm else ''}", it)
+
+        # ── Residence / Utility / Property ──
+        m = re.search(r'Biller\s*:\s*([A-Za-z][A-Za-z0-9 .&\-]*?)\s*(?:\(([A-Za-z ]+)\))?\s*A/C\s*:\s*(\d{4,})', b)
+        if m:
+            nm = m.group(1).strip() + (f" ({m.group(2)})" if m.group(2) else "")
+            am = re.search(r'Amount\s*:\s*Tk\s*([\d,]+\.?\d*)', b, re.I)
+            add("residence", "util_" + m.group(3), f"Utility account — {nm} A/C {m.group(3)}",
+                "", it, float(am.group(1).replace(",", "")) if am else 0.0)
+        m = re.search(r'(DPDC|DESCO|NESCO|WZPDCL|BPDB|BREB|Palli\s*Bidyut)?\s*Prepaid\s+Token.*?Customer\s*No\s*[:.]?\s*(\d{4,})', b, re.I | re.S)
+        if m:
+            add("residence", "util_" + m.group(2), f"Utility account — {(m.group(1) or 'Prepaid meter').upper()} Customer No {m.group(2)}", "(prepaid meter token)", it)
+        m = re.search(r'consumer\s*(?:number|no\.?)\s*[:#]?\s*(\d{4,}).*?meter\s*(?:number|no\.?)\s*[:#]?\s*(\d{4,})', b, re.I | re.S)
+        if m:
+            add("residence", "meter_" + m.group(2), f"Electricity consumer {m.group(1)}, meter {m.group(2)}", "", it)
+        m = re.search(r'\b(DNCC|DSCC|CCC|RCC|KCC|SCC|BCC|GCC|NCC|CUCC|MCC)\s+Holding\s+Tax\s*(?:Id|ID)?\s*(\d+)?(?:.*?Bill\s*No\.?\s*(\d+))?', b, re.I | re.S)
+        if m:
+            am = re.search(r'Tk\.?\s*([\d,]+\.?\d*)\s*paid', b, re.I)
+            add("residence", "holding_" + m.group(1).upper() + (m.group(2) or ""),
+                f"{m.group(1).upper()} Holding Tax paid (property)" + (f" — Holding ID {m.group(2)}" if m.group(2) else ""),
+                f"Bill {m.group(3)}" if m.group(3) else "", it, float(am.group(1).replace(",", "")) if am else 0.0)
+        # কুরিয়ার বুকিং: "Mango booked from Vomra, Satkhira. to Shyamoli,Dhaka. CN: …"
+        m = re.search(r'booked\s+from\s+(.+?)\.?\s+to\s+([A-Za-z][A-Za-z ,\-]+?)\.\s*CN', b, re.I)
+        if m:
+            _dst = re.sub(r'\s*,\s*', ', ', m.group(2).strip())
+            _src = re.sub(r'\s*,\s*', ', ', m.group(1).strip().rstrip('.'))
+            add("residence", "cdst_" + _dst.lower(), f"Courier deliveries addressed to: {_dst}", f"from {_src}", it)
+        m = re.search(r'local\s+post\s+office\s*\((\d{4})\)', b, re.I)
+        if m:
+            add("residence", "post_" + m.group(1), f"Parcel delivered to local post office — Post code {m.group(1)}", "", it)
+        m = re.search(r'ready\s+at\s+(.+?)(?:,\s*Pls|\.\s|,\s*Contact|$)', b, re.I)
+        if m and re.search(r'courier|parcel|product|fruits|delivery|sundarban|pathao|redx|steadfast|sa\s*paribahan', b + " " + snd, re.I):
+            add("residence", "pickup_" + m.group(1).strip().lower()[:40], f"Courier pickup point: {m.group(1).strip()}", f"via {snd}", it)
+
+        # ── Travel ──
+        m = re.search(r'PNR[\-:\s]*([A-Z0-9]{5,7})\b(.*?)(?:Ticket\s+amount\s*([\d,.]+))?', b, re.S)
+        if m and re.search(r'[A-Z]{3}-[A-Z]{3}', b):
+            segs = re.findall(r'\b([A-Z0-9]{2}\s?\d{2,4})\s+([A-Z]{3})-([A-Z]{3})\s+on\s+(\d{1,2}\s+[A-Za-z]{3})(?:\s+at\s+([\d:]+\s*[AP]M))?', b)
+            route = "; ".join(f"{f} {a}→{c} {d}{(' ' + t) if t else ''}" for f, a, c, d, t in segs) or "flight"
+            fare = re.search(r'Ticket\s+amount\s*([\d,]+\.?\d*)', b, re.I)
+            add("travel", "pnr_" + m.group(1), f"Flight PNR {m.group(1)} ({snd}) — {route}",
+                "", it, float(fare.group(1).replace(",", "")) if fare else 0.0)
+        m = re.search(r'COACH\s*:\s*(\S+)\s+([A-Z][A-Z\-]+)', b)
+        if m and re.search(r'FARE', b):
+            fare = re.search(r'FARE\s*:\s*(\d+)', b); seat = re.search(r'TS\s*:\s*([\w,\-]+)', b)
+            op = re.search(r'\]\s*(.+?)(?:\s+TK|$)', b)
+            add("travel", "bus_" + m.group(2) + m.group(1), f"Bus ticket {m.group(2)} (coach {m.group(1)})",
+                (f"seat {seat.group(1)}" if seat else "") + (f" · {op.group(1).strip()[:60]}" if op else ""),
+                it, float(fare.group(1)) if fare else 0.0)
+
+        # ── Health ──
+        if (_PC_HEALTH_RE.search(snd) or _PC_HEALTH_RE.search(b)) and _PC_HEALTH_ENGAGE.search(b) \
+                and not re.search(r'Purchase\s+BDT', b, re.I) \
+                and not re.search(r'শুভেচ্ছা|অভিনন্দন|greetings?\s+from.*?(?:eid|new\s+year)|offer|discount|ছাড়|package', b, re.I):
+            nm = re.search(r'([A-Z][A-Za-z.&]*(?:\s+[A-Z][A-Za-z.&]*)*\s+(?:Hospital|Hospitals|Diagnostic(?:\s+Cent(?:re|er))?|Clinic|Medical(?:\s+College)?)'
+                           r'(?:\s*(?:Ltd\.?|PLC))?(?:\s*\([A-Za-z ]+\))?)', b)
+            if nm or _PC_HEALTH_RE.search(snd):
+                inst = (nm.group(1).strip() if nm else snd).strip()
+                ids = re.findall(r'(UHID\s*(?:is|no\.?|:)?\s*[A-Z]{0,4}\d{5,}|Registration\s*ID\s*(?:is|:)?\s*\d{5,}|LAB\s*/\s*RIS\s*number\s*is\s*\d+)', b, re.I)
+                _hk = re.sub(r'\s*\(.*?\)|\b(?:ltd|plc|limited|centre|center|lab|labs)\b\.?', '', inst.lower())
+                _hk = " ".join(re.sub(r'[^a-z ]', ' ', _hk).split()[:2]) or inst.lower()[:20]
+                add("health", "h_" + _hk, inst, " · ".join(i.strip() for i in ids), it)
+
+        # ── Names addressed ──
+        for nm in re.findall(r'\bDear\s+(?:Mr|Mrs|Ms|Miss|Md|Dr|Engr)\.?\s+([A-Z][A-Za-z.]*(?:\s{1,2}[A-Z][A-Za-z.]*){0,3})', b):
+            n2 = re.sub(r'\s+', ' ', nm).strip(" .,")
+            if n2.split()[0].lower() in _PC_NAME_STOP or len(n2) < 3: continue
+            add("names", "n_" + n2.lower(), n2.title() if n2.isupper() else n2, f"by {snd}", it)
+
+        for nm in re.findall(r'\bDear\s+([\u0980-\u09FF]{2,}(?:\s[\u0980-\u09FF]{2,}){0,3})\s*,', b):
+            n2 = nm.strip()
+            if n2 in ("গ্রাহক", "সম্মানিত", "প্রিয়", "অভিভাবক", "শিক্ষার্থী"): continue
+            add("names", "n_" + n2, n2, f"by {snd}", it)
+
+        # ── Card spending locations ──
+        m = re.search(r'Purchase\s+BDT\s*([\d,]+\.?\d*)\s+from\s+([^,]+),\s*([A-Z][A-Z ]+?),\s*([^.]+?)\.\s', b)
+        if m:
+            mer = m.group(2).strip().rstrip(" &.")
+            _city = m.group(3).strip().title(); _ar = m.group(4).strip().strip(", ")
+            _area = ", ".join(x for x in ([_ar] if _ar and _ar.upper() != _city.upper() else []) + [_city] if x)
+            add("spending", "sp_" + re.sub(r'[^a-z0-9]', '', mer.lower()), mer, _area, it,
+                float(m.group(1).replace(",", "")))
+
+        # ── Other financial footprint ──
+        m = re.search(r'\(([A-Z]{3,10})\)\s*এ\s+আপনার\s+([\d,]+)\s*/-\s*সঞ্চয়\s+জমা', b)
+        if m:
+            add("finance", "coop_" + m.group(1), f"Cooperative savings deposits — {m.group(1)}", "", it,
+                float(m.group(2).replace(",", "")))
+        m = re.search(r'received\s+(?:Digital\s+)?Loan\s+(?:of\s+)?Tk\s*([\d,]+\.?\d*)\s+from\s+([A-Za-z ]+?Bank)', b, re.I)
+        if m:
+            add("finance", "loan_" + m.group(2).lower(), f"Loan received — {m.group(2).strip()}", "", it,
+                float(m.group(1).replace(",", "")))
+        m = re.search(r'Loan\s+Repayment\s+of\s+Tk\s*([\d,]+\.?\d*)', b, re.I)
+        if m:
+            add("finance", "loanrep", "Loan repayment", "", it, float(m.group(1).replace(",", "")))
+
+    out = {}
+    for (cat, key), d in agg.items():
+        d.pop("_bodies", None)
+        out.setdefault(cat, []).append(d)
+    for cat in out:
+        out[cat].sort(key=lambda d: (-(d["amount"] or 0), -d["count"]))
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  BALANCE RECONCILIATION — SMS-এ দেখা IN/OUT বনাম ব্যালেন্সের আসল পরিবর্তন
+# ═══════════════════════════════════════════════════════════════════════════
+def compute_reconciliation(results, tol=200.0):
+    """প্রতিটি একাউন্ট/ওয়ালেটে ব্যালেন্স-চেকপয়েন্টের মধ্যে SMS-এ না-থাকা লেনদেন বের করে।
+    ক্রেডিট কার্ড বাদ (কার্ডের 'Balance' আসলে available limit)।"""
+    from collections import defaultdict as _dd
+    groups = _dd(list)
+    for k, s in enumerate(results):
+        a = s.get("acct", {}) or {}
+        svc = a.get("service", "")
+        if not svc or s.get("sender_type") not in ("mfs", "bank"): continue
+        if a.get("acct_type") == "card": continue
+        if re.search(r'card\s+bill|total\s+due', s.get("body", ""), re.I): continue
+        acc = a.get("acct_id", "") if a.get("acct_type") == "account" else ""
+        groups[(svc, acc)].append((to_dt(s.get("date", "")), k, s))
+    out = []
+    for (svc, acc), evs in groups.items():
+        evs = [e for e in evs if e[0]]
+        evs.sort(key=lambda e: (e[0], e[1]))
+        def _io(s):
+            a = s.get("acct", {}) or {}; amt = s.get("amount", 0) or 0
+            d = a.get("direction", "")
+            return (amt if d == "Received" else 0.0), (amt if d == "Sent" else 0.0)
+        def _bl(s): return (s.get("acct", {}) or {}).get("balance", 0) or 0
+        # ── একই মিনিটের মেসেজ: (১) একই ব্যালেন্স লেখা একাধিক মেসেজ = একটি ব্যাচ (ব্যাংক
+        #    সম্মিলিত চূড়ান্ত ব্যালেন্স দেয়) → যোগ করে একটি চেকপয়েন্ট; (২) বাকিগুলো ব্যালেন্স-শৃঙ্খল
+        #    মিলিয়ে ক্রমে সাজানো।
+        units = []   # (dt, in, out, bal, body)
+        _i = 0; _run = None
+        while _i < len(evs):
+            _j = _i
+            while _j < len(evs) and evs[_j][0] == evs[_i][0]: _j += 1
+            grp = evs[_i:_j]; batch = {}; singles = []
+            for e in grp:
+                b = _bl(e[2]); ii, oo = _io(e[2])
+                if b > 0:
+                    k = round(b, 2)
+                    if k in batch:
+                        batch[k][1] += ii; batch[k][2] += oo; batch[k][4] += " ‖ " + e[2].get("body", "")
+                    else:
+                        batch[k] = [e[0], ii, oo, b, e[2].get("body", "")]
+                else:
+                    singles.append([e[0], ii, oo, 0.0, e[2].get("body", "")])
+            pool = list(batch.values()) + singles
+            while pool:
+                pick = None
+                if _run is not None:
+                    for u in pool:
+                        if u[3] > 0 and abs(u[3] - (_run + u[1] - u[2])) <= tol: pick = u; break
+                if pick is None: pick = pool[0]
+                pool.remove(pick); units.append(pick)
+                _run = pick[3] if pick[3] > 0 else ((_run + pick[1] - pick[2]) if _run is not None else None)
+            _i = _j
+        running = None; pending = 0.0
+        first_bal = last_bal = None; first_dt = last_dt = prev_dt = None
+        sms_in = sms_out = 0.0; gaps = []; n_ck = 0
+        for dt, ii, oo, bal, body in units:
+            delta = ii - oo
+            if bal > 0:
+                n_ck += 1
+                if running is None:
+                    running = bal; first_bal = bal; first_dt = dt; pending = 0.0
+                else:
+                    sms_in += ii; sms_out += oo
+                    gap = bal - (running + pending + delta)
+                    if abs(gap) > tol:
+                        gaps.append({"from": prev_dt, "to": dt, "gap": gap, "body": body})
+                    running = bal; pending = 0.0
+                last_bal = bal; last_dt = dt; prev_dt = dt
+            elif running is not None:
+                pending += delta; sms_in += ii; sms_out += oo
+        if n_ck < 2: continue
+        # একই মিনিটের ক্রম-বিভ্রাটে তৈরি +/− জোড়া বাদ
+        clean = []; i = 0
+        while i < len(gaps):
+            g = gaps[i]
+            if i + 1 < len(gaps):
+                h = gaps[i + 1]
+                if abs(g["gap"] + h["gap"]) <= tol and h["to"] and g["to"] and abs((h["to"] - g["to"]).total_seconds()) <= 180:
+                    i += 2; continue
+            clean.append(g); i += 1
+        exp_close = first_bal + sms_in - sms_out
+        net = last_bal - exp_close
+        u_out = sum(-g["gap"] for g in clean if g["gap"] < 0)
+        u_in = sum(g["gap"] for g in clean if g["gap"] > 0)
+        out.append({"service": svc, "acct": acc, "first_dt": first_dt, "last_dt": last_dt,
+                    "open": first_bal, "close": last_bal, "sms_in": sms_in, "sms_out": sms_out,
+                    "exp_close": exp_close, "net": net, "u_out": u_out, "u_in": u_in,
+                    "gaps": sorted(clean, key=lambda g: g["gap"])[:8], "checkpoints": n_ck})
+    out.sort(key=lambda r: -(r["u_out"] + r["u_in"]))
+    return out
+
+def _fmt_d(dt, f="%d %b %Y"):
+    try: return dt.strftime(f) if dt else ""
+    except Exception: return ""
+
+def build_profile_html(P):
+    """Subject Profile Clues → HTML (প্রতিটি আইটেম আলাদাভাবে ডিলিটযোগ্য)।"""
+    if not P: return ""
+    LIM = {"spending": 12, "names": 15, "health": 12}
+    H = ['<div class="im-sec pc-sec"><div class="im-head">🧩 Subject Profile Clues</div>',
+         '<div class="im-note">Identity, employment, residence, vehicle, travel and spending clues found across '
+         '<b>all</b> SMS — including ones filtered out of the message list above (e.g. salary bills, meter tokens, BRTA notices). '
+         'Each clue shows how often it appeared, the date range, and the latest source SMS in full.</div>']
+    any_item = False
+    for cat, title in _PC_CATS:
+        items = P.get(cat) or []
+        if not items: continue
+        any_item = True
+        H.append(f'<div class="pc-cat"><div class="im-ctitle">{title} <span class="pc-n">({len(items)})</span></div>')
+        for d in items[:LIM.get(cat, 30)]:
+            rng = _fmt_d(d.get("first"))
+            if d.get("last") and d.get("first") and _fmt_d(d["last"]) != rng: rng += " → " + _fmt_d(d["last"])
+            meta = [f'{d["count"]}×']
+            if rng: meta.append(rng)
+            if d.get("amount"): meta.append(f'৳{d["amount"]:,.0f}')
+            H.append('<div class="pc-item">'
+                     f'<div class="pc-top"><span class="pc-lbl">{hl.escape(d["label"])}</span>'
+                     f'<span class="pc-meta">{" · ".join(meta)}</span></div>'
+                     + (f'<div class="pc-det">{hl.escape(d["detail"])}</div>' if d.get("detail") else '')
+                     + (f'<div class="pc-src"><span class="pc-snd">{hl.escape(d.get("sender",""))}:</span> '
+                        f'{hl.escape(d.get("body",""))}</div>' if d.get("body") else '')
+                     + '</div>')
+        if len(items) > LIM.get(cat, 30):
+            H.append(f'<div class="im-note">+ {len(items) - LIM.get(cat, 30)} more not shown</div>')
+        H.append('</div>')
+    if not any_item:
+        H.append('<div class="im-noflag">No profile clues found in this SMS set.</div>')
+    H.append('</div>')
+    return "".join(H)
+
+def build_recon_html(R):
+    """Balance Reconciliation → HTML।"""
+    if not R: return ""
+    H = ['<div class="im-sec rc-sec"><div class="im-head">⚖️ Balance Reconciliation — SMS vs Actual Balance</div>',
+         '<div class="im-note">For each wallet / bank account the balance printed in the SMS is chained from one message to the next. '
+         'If the balance moves by more than the SMS transactions explain, money moved <b>without an SMS in this export</b> '
+         '(e.g. cash-out / send-money / transfers whose SMS were not captured). Credit cards are excluded '
+         '(their "balance" is the available limit). Small differences can be fees/charges.</div>']
+    flags = []
+    for r in R:
+        thr = max(1000.0, 0.005 * (r["sms_in"] + r["sms_out"]))
+        nm = f'{r["service"]} {r["acct"]}'.strip()
+        per = f'{_fmt_d(r["first_dt"])} – {_fmt_d(r["last_dt"])}'
+        if r["net"] < -thr:
+            flags.append(f'<div class="im-flag im-flag-red">💸 <b>{hl.escape(nm)}:</b> about <b>৳{-r["net"]:,.0f}</b> left this account '
+                         f'between {per} with <b>no SMS record</b> — outgoing transactions (cash-out / send money / transfer) '
+                         'are missing from this SMS export.</div>')
+        elif r["net"] > thr:
+            flags.append(f'<div class="im-flag im-flag-amber">📥 <b>{hl.escape(nm)}:</b> about <b>৳{r["net"]:,.0f}</b> arrived in this account '
+                         f'between {per} with <b>no SMS record</b> — an incoming credit SMS is missing.</div>')
+    H.extend(flags)
+    H.append('<div class="im-scroll"><table class="im-tbl rc-tbl"><tr><th>Account / Wallet</th><th>Period</th>'
+             '<th>Opening bal.</th><th>SMS IN</th><th>SMS OUT</th><th>Expected closing</th><th>Actual closing</th>'
+             '<th>Unexplained</th><th>Status</th></tr>')
+    for r in R:
+        thr = max(1000.0, 0.005 * (r["sms_in"] + r["sms_out"]))
+        if abs(r["net"]) <= thr: st = '<span class="rc-ok">✓ Consistent</span>'
+        elif r["net"] < 0:      st = '<span class="rc-bad">⚠ Untracked OUT</span>'
+        else:                   st = '<span class="rc-warn">⚠ Untracked IN</span>'
+        _nc = "#dc2626" if r["net"] < -thr else ("#b45309" if r["net"] > thr else "#475569")
+        H.append(f'<tr><td><b>{hl.escape(r["service"])}</b>'
+                 + (f'<div class="im-acct">{hl.escape(r["acct"])}</div>' if r["acct"] else '')
+                 + f'</td><td>{_fmt_d(r["first_dt"], "%d %b %y")} → {_fmt_d(r["last_dt"], "%d %b %y")}'
+                 f'<div class="im-acct">{r["checkpoints"]} balance points</div></td>'
+                 f'<td>৳{r["open"]:,.0f}</td><td style="color:#16a34a">৳{r["sms_in"]:,.0f}</td>'
+                 f'<td style="color:#dc2626">৳{r["sms_out"]:,.0f}</td><td>৳{r["exp_close"]:,.0f}</td>'
+                 f'<td><b>৳{r["close"]:,.0f}</b></td>'
+                 f'<td style="color:{_nc};font-weight:800">{"+" if r["net"] > 0 else ""}৳{r["net"]:,.0f}</td><td>{st}</td></tr>')
+    H.append('</table></div>')
+    # largest unexplained movements
+    rows = []
+    for r in R:
+        for g in r["gaps"]:
+            rows.append((abs(g["gap"]), r, g))
+    rows.sort(key=lambda x: -x[0])
+    if rows:
+        H.append('<div class="im-ctitle">🔍 Largest Unexplained Balance Movements</div>'
+                 '<div class="im-scroll"><table class="im-tbl rc-tbl"><tr><th>Account</th><th>Between</th>'
+                 '<th>Unexplained</th><th>Detected at (next SMS with balance)</th></tr>')
+        for _, r, g in rows[:12]:
+            nm = f'{r["service"]} {r["acct"]}'.strip()
+            col = "#dc2626" if g["gap"] < 0 else "#b45309"
+            H.append(f'<tr><td>{hl.escape(nm)}</td>'
+                     f'<td>{_fmt_d(g["from"], "%d %b %y %H:%M")} → {_fmt_d(g["to"], "%d %b %y %H:%M")}</td>'
+                     f'<td style="color:{col};font-weight:800">{"−" if g["gap"] < 0 else "+"}৳{abs(g["gap"]):,.0f}</td>'
+                     f'<td class="rc-body">{hl.escape(g["body"])}</td></tr>')
+        H.append('</table></div>')
+    H.append('</div>')
+    return "".join(H)
+
+def _dedupe_same_amount(results):
+    """একই লেনদেনের দুটি মেসেজ (যেমন "payment reserved" + "payment successful",
+    বা "received Loan" + "received Digital Loan") দুবার গোনা এড়ায়।
+
+    নিয়ম (user-specified): একই service + একই amount + একই direction হলে, এবং
+    অল্প সময়ের ব্যবধানে (≤180s) এলে, আর ব্যালেন্সে টাকা একবারই কর্তন হলে
+    (দুই মেসেজের balance সমান, বা একটিতে balance নেই) → ০১টি লেনদেন হিসেবে গোনা।
+    ব্যালেন্স দুবার কমলে (amount অনুযায়ী) → আলাদা লেনদেন, দুটোই রাখি।
+    """
+    if len(results) < 2: return results, 0
+    # index সহ sort — time, তারপর original order
+    idx = sorted(range(len(results)),
+                 key=lambda i: (str(results[i].get("date","")), i))
+    drop = set()
+    # (service, amount, direction) অনুযায়ী consecutive candidate খুঁজি
+    def _key(s):
+        ai = s.get("acct",{}) or {}
+        return (ai.get("service",""), round(s.get("amount",0) or 0, 2), ai.get("direction",""))
+    def _bal(s): return (s.get("acct",{}) or {}).get("balance",0) or 0
+    def _is_pending(s):
+        b = s.get("body","").lower()
+        return bool(re.search(r'being\s+reserved|is\s+reserved|reserved\s+for|pending|initiat', b))
+    def _is_success(s):
+        b = s.get("body","").lower()
+        return bool(re.search(r'successful|completed|is\s+complete|সফল', b))
+
+    for a in range(len(idx)):
+        i = idx[a]
+        if i in drop: continue
+        si = results[i]
+        if (si.get("amount",0) or 0) <= 0: continue
+        ki = _key(si); ti = to_dt(si.get("date",""))
+        for b in range(a+1, len(idx)):
+            j = idx[b]
+            if j in drop: continue
+            sj = results[j]
+            if _key(sj) != ki: continue
+            tj = to_dt(sj.get("date",""))
+            if ti and tj and abs((tj-ti).total_seconds()) > 180: break  # time উইন্ডো পার
+            bi, bj = _bal(si), _bal(sj)
+            # ব্যালেন্স দুবার কমেছে (amount অনুযায়ী) → আলাদা লেনদেন, রাখি
+            if bi > 0 and bj > 0 and abs(abs(bi - bj) - ki[1]) < 1:
+                continue
+            # ব্যালেন্স সমান, বা একটিতে balance নেই → একই লেনদেনের দুই মেসেজ → merge
+            same_bal = (bi > 0 and bj > 0 and abs(bi - bj) < 1)
+            one_missing = (bi == 0) ^ (bj == 0)
+            if same_bal or one_missing:
+                # successful/final মেসেজটা রাখি, pending/reserved টা বাদ দিই
+                if _is_pending(si) and not _is_pending(sj):
+                    drop.add(i)
+                else:
+                    drop.add(j)
+                if i in drop: break   # si বাদ পড়লে আর তুলনা করার দরকার নেই
+    if not drop: return results, 0
+    kept = [s for k,s in enumerate(results) if k not in drop]
+    return kept, len(drop)
 
 def _filter_and_analyze(raw, target_number="", input_path=""):
     """raw SMS list → merge → filter → analyze → (results, stats, tn)"""
@@ -2427,7 +3753,23 @@ def _filter_and_analyze(raw, target_number="", input_path=""):
             res["parts"] = item.get("parts",1)
             results.append(res)
 
-    stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt}
+    # একই পেমেন্টের "reserved + successful" (বা দুই notification) দুবার গোনা এড়াই
+    results, _dupcnt = _dedupe_same_amount(results)
+    # সাবজেক্টের নিজের নম্বর — AParty কলামে সবচেয়ে বেশি আসা নম্বর (বা target number)
+    _own = ""
+    if target_number:
+        _d = re.sub(r'\D', '', target_number)
+        if len(_d) >= 10: _own = "0" + _d[-10:]
+    if not _own:
+        _ac = Counter()
+        for _it in merged_:
+            _d = re.sub(r'\D', '', str(_it.get("aparty", "") or ""))
+            if len(_d) >= 10 and _d[-10:].startswith("1"): _ac["0" + _d[-10:]] += 1
+        if _ac: _own = _ac.most_common(1)[0][0]
+    stats = {"total":len(raw),"after_merge":len(merged_),"filtered":filtered_cnt,"deduped":_dupcnt,
+             "own_number": _own,
+             "profile": extract_profile_clues(merged_),
+             "recon": compute_reconciliation(results)}
     tn = re.sub(r'[^\d]','', target_number) if target_number else ""
     if not tn and input_path:
         base = os.path.splitext(os.path.basename(input_path))[0]
