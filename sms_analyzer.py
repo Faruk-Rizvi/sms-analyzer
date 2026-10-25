@@ -1087,6 +1087,10 @@ TRAVEL_RE = re.compile(
 COURIER_RE = re.compile(
     # Tracking link/ID সহ courier SMS — সবসময় রাখো
     r'track\s+your\s+parcel|steadfast\.com\.bd/t/|ptho\.app/'
+    # Sundarban / SA Paribahan ইত্যাদি: "Track here: http://…", পিকআপ-অফিস ("ready at … Office"), বুকিং কনফার্ম
+    r'|track\s+here\s*:?\s*https?://|scsapps\.\w+'
+    r'|(?:parcel|fruits?|product|poly|consignment|goods|item|mango|lichi)[\w /]{0,30}?\s+ready\s+at\s+.{3,80}?office'
+    r'|booking\s+confirmed\s+from\s+.{2,40}?(?:https?://|track)'
     r'|track\s+at\s+https|parcel\s+id.*track|tracking\s+id'
     r'|redx\.com\.bd/\S+|ecourier\.com\.bd/\S+|paperfly\.com\.bd/\S+'
     r'|track(?:ing)?\s+(?:id|no|code)\s*[:#]?\s*\w{5,}'
@@ -1563,88 +1567,111 @@ def load_xlsx(path):
         wb = openpyxl.load_workbook(path, read_only=False, data_only=True)
     except Exception:
         wb = openpyxl.load_workbook(path, read_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows: return []
-    hdr = [str(c).strip() if c else "" for c in rows[0]]
+    # ── সব শিট পড়ি (শুধু active শিট নয়) — কিছু এক্সপোর্টে পুরো ডেটা এক শিটে, অংশবিশেষ আরেক শিটে থাকে ──
+    def _parse_sheet(rows):
+        if not rows: return []
+        hdr = [str(c).strip() if c else "" for c in rows[0]]
 
-    def ci(ns):
-        for n in ns:
-            for i,h in enumerate(hdr):
-                if n.lower() in h.lower(): return i
-        return None
+        def ci(ns):
+            for n in ns:
+                for i,h in enumerate(hdr):
+                    if n.lower() in h.lower(): return i
+            return None
 
-    ti = ci(['starttime','start','date','time'])
-    ai = ci(['a party','aparty','sender_a'])
-    bi = ci(['b party','bparty','sender_b','sender'])
-    mi = ci(['message content','message','body','msg'])
-    di = ci(['direction'])
+        ti = ci(['starttime','start','date','time'])
+        ai = ci(['a party','aparty','sender_a'])
+        bi = ci(['b party','bparty','sender_b','sender'])
+        mi = ci(['message content','message','body','msg'])
+        di = ci(['direction'])
 
-    # ── Format detection ─────────────────────────────────────
-    # Format A (016-style): AParty=sender_name, BParty=target_number (same number repeats)
-    # Format B (017/880-style): AParty=target_number (repeats), BParty=sender_name
-    #
-    # Detection: SMSMT rows-এ যে column-এ একটাই value বারবার আসে সেটা target।
-    # target যদি BParty-তে → Format A;  target যদি AParty-তে → Format B
-    mt_a_vals = []
-    mt_b_vals = []
-    for r in rows[1:]:
-        if ai is None or bi is None: break
-        if di is not None and di<len(r) and str(r[di]).strip().upper()=="SMSMT":
-            _body = str(r[mi]).strip() if mi is not None and mi<len(r) else ""
-            if _body and _body != "None":
-                if r[ai]: mt_a_vals.append(str(r[ai]).strip())
-                if r[bi]: mt_b_vals.append(str(r[bi]).strip())
+        # ── Format detection ─────────────────────────────────────
+        # Format A (016-style): AParty=sender_name, BParty=target_number (same number repeats)
+        # Format B (017/880-style): AParty=target_number (repeats), BParty=sender_name
+        #
+        # Detection: SMSMT rows-এ যে column-এ একটাই value বারবার আসে সেটা target।
+        # target যদি BParty-তে → Format A;  target যদি AParty-তে → Format B
+        mt_a_vals = []
+        mt_b_vals = []
+        for r in rows[1:]:
+            if ai is None or bi is None: break
+            if di is not None and di<len(r) and str(r[di]).strip().upper() in ("SMSMT","MTSMS"):
+                _body = str(r[mi]).strip() if mi is not None and mi<len(r) else ""
+                if _body and _body != "None":
+                    if r[ai]: mt_a_vals.append(str(r[ai]).strip())
+                    if r[bi]: mt_b_vals.append(str(r[bi]).strip())
 
-    # সবচেয়ে বেশি repeat হওয়া value-র frequency ratio
-    def top_freq_ratio(vals):
-        if not vals: return 0.0
-        c = Counter(vals)
-        top_count = c.most_common(1)[0][1]
-        return top_count / len(vals)
+        # সবচেয়ে বেশি repeat হওয়া value-র frequency ratio
+        def top_freq_ratio(vals):
+            if not vals: return 0.0
+            c = Counter(vals)
+            top_count = c.most_common(1)[0][1]
+            return top_count / len(vals)
 
-    a_ratio = top_freq_ratio(mt_a_vals)  # AParty-তে একটা value কতটুকু dominant
-    b_ratio = top_freq_ratio(mt_b_vals)  # BParty-তে একটা value কতটুকু dominant
+        a_ratio = top_freq_ratio(mt_a_vals)  # AParty-তে একটা value কতটুকু dominant
+        b_ratio = top_freq_ratio(mt_b_vals)  # BParty-তে একটা value কতটুকু dominant
 
-    # যে column-এ dominant repeat বেশি → সেটাই target column
-    # Format A: BParty dominant (BParty=target) → sender = AParty
-    # Format B: AParty dominant (AParty=target) → sender = BParty
-    use_format_a = (b_ratio > a_ratio)   # BParty-তে target repeat বেশি
+        # যে column-এ dominant repeat বেশি → সেটাই target column
+        # Format A: BParty dominant (BParty=target) → sender = AParty
+        # Format B: AParty dominant (AParty=target) → sender = BParty
+        use_format_a = (b_ratio > a_ratio)   # BParty-তে target repeat বেশি
+
+        out = []
+        for r in rows[1:]:
+            def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] and str(r[i]).strip() not in ('','None') else ""
+            a_val     = g(ai)
+            b_val     = g(bi)
+            body      = g(mi)
+            raw_date  = r[ti] if ti is not None and ti<len(r) else ""
+            date      = to_dt(raw_date) if raw_date else ""
+            direction = g(di).upper() if di is not None else ""
+            if direction in ("SMSMT","MTSMS"): direction = "SMSMT"
+            elif direction in ("SMSMO","MOSMS"): direction = "SMSMO"
+
+            if use_format_a:
+                # Format A: AParty=sender, BParty=target
+                sender = a_val or b_val
+                aparty = b_val
+            else:
+                # Format B: AParty=target, BParty=sender
+                if direction == "SMSMO":
+                    sender = a_val   # target নিজে outgoing পাঠাচ্ছে
+                    aparty = a_val
+                else:
+                    sender = b_val or a_val
+                    aparty = a_val
+
+            if sender and body:
+                # Unicode NFC normalize করি — xlsx থেকে আসা বাংলা text-এ
+                # "য়" U+09DF (single char) vs U+09AF+U+09BC (two chars) মিস match এড়াতে
+                import unicodedata as _ud
+                body   = _ud.normalize('NFC', body)
+                sender = _ud.normalize('NFC', sender)
+                out.append({"sender": sender, "body": body, "date": date,
+                            "aparty": aparty, "direction": direction})
+
+        return out
 
     out = []
-    for r in rows[1:]:
-        def g(i): return str(r[i]).strip() if i is not None and i<len(r) and r[i] and str(r[i]).strip() not in ('','None') else ""
-        a_val     = g(ai)
-        b_val     = g(bi)
-        body      = g(mi)
-        raw_date  = r[ti] if ti is not None and ti<len(r) else ""
-        date      = to_dt(raw_date) if raw_date else ""
-        direction = g(di).upper() if di is not None else ""
-        if direction in ("SMSMT","MTSMS"): direction = "SMSMT"
-        elif direction in ("SMSMO","MOSMS"): direction = "SMSMO"
-
-        if use_format_a:
-            # Format A: AParty=sender, BParty=target
-            sender = a_val or b_val
-            aparty = b_val
-        else:
-            # Format B: AParty=target, BParty=sender
-            if direction == "SMSMO":
-                sender = a_val   # target নিজে outgoing পাঠাচ্ছে
-                aparty = a_val
-            else:
-                sender = b_val or a_val
-                aparty = a_val
-
-        if sender and body:
-            # Unicode NFC normalize করি — xlsx থেকে আসা বাংলা text-এ
-            # "য়" U+09DF (single char) vs U+09AF+U+09BC (two chars) মিস match এড়াতে
-            import unicodedata as _ud
-            body   = _ud.normalize('NFC', body)
-            sender = _ud.normalize('NFC', sender)
-            out.append({"sender": sender, "body": body, "date": date,
-                        "aparty": aparty, "direction": direction})
-
+    _prior = Counter()          # আগের শিটগুলোর (date, sender, body, direction) গণনা
+    for ws in wb.worksheets:
+        try:
+            rows = list(ws.iter_rows(values_only=True))
+        except Exception:
+            continue
+        if not rows: continue
+        _h0 = " ".join(str(c).lower() for c in rows[0] if c)
+        if not re.search(r'message|body|msg|content|sms', _h0): continue
+        _this = _parse_sheet(rows)
+        _used = Counter(); _cnt = Counter()
+        for o in _this:
+            k = (str(o["date"])[:16], o["sender"], o["body"], o["direction"])
+            _cnt[k] += 1
+            # আগের শিটে হুবহু একই মেসেজ যতবার আছে, ততবার পর্যন্ত বাদ (ডুপ্লিকেট শিট)
+            if _used[k] < _prior[k]:
+                _used[k] += 1; continue
+            out.append(o)
+        _prior.update(_cnt)
+    if not out: return []
     # ── Multipart SMS concatenation ───────────────────────────────────────────
     # UCS-2 (বাংলা) SMS per part: max 67 chars। Same sender+date → consecutive parts
     MULTIPART_LEN = 67
